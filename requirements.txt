@@ -1,0 +1,12 @@
+numpy>=1.24
+scipy>=1.11
+filterpy>=1.4
+opencv-python>=4.8
+Pillow>=10.0
+open3d>=0.18
+streamlit>=1.28
+plotly>=5.17
+pandas>=2.0
+matplotlib>=3.7
+pyyaml>=6.0
+scikit-learn>=1.3

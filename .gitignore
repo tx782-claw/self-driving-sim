@@ -1,0 +1,39 @@
+# v0.2.2
+# Self-Driving Sim 忽略规则
+# --------------------------
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 数据 / 输出
+data/cache/
+scenarios_data/*.png
+scenarios_data/*.gif
+scenarios_data/*.mp4
+scenarios_data/e2e_*.html
+!scenarios_data/.gitkeep
+streamlit.log
+*.log
+!CHANGELOG.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 测试 artifacts
+/tmp/*_test_*.py
+/tmp/e2e_test.py
+.coverage
+htmlcov/

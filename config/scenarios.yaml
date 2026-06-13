@@ -1,0 +1,69 @@
+# Self-Driving Sim 场景配置 (v0.2.2)
+# ========================================
+# 通过 scenarios_yaml_loader.py 加载此文件，批量跑 sweep 实验
+# 用法:
+#   from scenarios import load_scenarios_from_yaml
+#   scenarios = load_scenarios_from_yaml("config/scenarios.yaml")
+#   for s in scenarios: run_e2e(s)
+
+scenarios:
+  # ── Baseline ──
+  - name: highway_baseline_5v
+    type: highway
+    params: {num_vehicles: 5, duration: 20.0, dt: 0.05}
+
+  - name: highway_baseline_9v
+    type: highway
+    params: {num_vehicles: 9, duration: 20.0, dt: 0.05}
+
+  # ── 密集场景 (P2 重点) ──
+  - name: dense_24v
+    type: dense
+    params: {num_lanes: 3, cars_per_lane: 8, duration: 30.0, dt: 0.05}
+
+  - name: dense_12v
+    type: dense
+    params: {num_lanes: 3, cars_per_lane: 4, duration: 20.0, dt: 0.05}
+
+  # ── 加减速场景 (IMM 重点) ──
+  - name: stop_and_go_4v
+    type: stop_and_go
+    params: {num_vehicles: 4, duration: 20.0, dt: 0.05}
+
+  # ── Sweep: 车辆数对 MOTA 的影响 ──
+  - name: highway_sweep_v3
+    type: highway
+    params: {num_vehicles: 3, duration: 20.0, dt: 0.05}
+  - name: highway_sweep_v5
+    type: highway
+    params: {num_vehicles: 5, duration: 20.0, dt: 0.05}
+  - name: highway_sweep_v7
+    type: highway
+    params: {num_vehicles: 7, duration: 20.0, dt: 0.05}
+  - name: highway_sweep_v9
+    type: highway
+    params: {num_vehicles: 9, duration: 20.0, dt: 0.05}
+
+# ── 传感器默认配置（可被单场景覆盖）──
+default_sensors:
+  lidar_top:
+    class: LidarSensor
+    params: {position: [0, 0, 1.7], rate_hz: 10.0, num_lines: 32,
+             vertical_fov_deg: [-25.0, 25.0], max_range_m: 80.0,
+             min_range_m: 1.0, noise_std: 0.05}
+  radar_front:
+    class: RadarSensor
+    params: {position: [2.0, 0, 0.5], rate_hz: 20.0,
+             max_range_m: 200.0, noise_std: 0.1}
+  imu:
+    class: IMUSensor
+    params: {position: [0, 0, 0], rate_hz: 100.0}
+  gps:
+    class: GPSSensor
+    params: {position: [0, 0, 0], rate_hz: 1.0}
+
+# ── Tracker 默认配置 ──
+default_tracker:
+  params: {dt: 0.05, gate_threshold: 15.0, min_hits_to_confirm: 2,
+           max_miss_streak: 30, use_confidence_weighted: true,
+           association_mode: hungarian, use_ukf: false, use_imm: false}
