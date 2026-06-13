@@ -8,12 +8,14 @@
 ## ✨ 特性
 
 - 🎯 **多传感器仿真**: LiDAR (32线机械) / Radar (FMCW) / Camera (针孔) / IMU / GPS
-- 🧠 **多目标跟踪**: EKF 匀速/匀加速模型 + 贪心 N-to-1 数据关联
-- 🌐 **3D 可视化**: Plotly (web) / Open3D (本地)
+- 🧠 **多目标跟踪**: EKF (CV/CA) · **IMM (CV+CA 交互多模型)** · UKF (无迹) + 贪心 N-to-1 数据关联
+- 📡 **距离依赖传感器模型** (v0.2.2): LiDAR/Radar/Camera 噪声 + 漏检率随距离变化
+- 🛣️ **丰富场景**: Highway / Urban / Dense Highway (24车) / Junction / Stop & Go
+- 🌐 **可视化**: Plotly (web) · Open3D (本地) · **BEV 鸟瞰融合**（单图叠加 3 传感器）
 - 🖥️ **Web UI**: Streamlit 一键启动，时间滑块回放，指标时序曲线
 - 📊 **评估指标**: RMSE / Precision / Recall / ID 切换 / 时延
-- 📡 **传感器面板**: LiDAR BEV/3D · Radar 距离-多普勒 · Camera / IMU / GPS
 - 🎬 **导出**: 全场 JSON · track/GT CSV · 动画 GIF
+- 🧪 **pytest 分层**: 64 个测试 (unit + integration) 全过
 
 ---
 
@@ -37,8 +39,25 @@ streamlit run app/webui.py
 ### 命令行端到端测试
 
 ```bash
-python tests/test_e2e.py
+PYTHONPATH=. python tests/integration/test_e2e.py
 ```
+
+### pytest 分层测试 (64 个)
+
+```bash
+# 跑全部 (unit + integration)
+python3 -m pytest tests/
+
+# 只跑 unit (快，快到0.5s)
+python3 -m pytest tests/unit/
+
+# 只跑 integration (慢，~2s)
+python3 -m pytest tests/integration/
+```
+
+测试覆盖：
+- `tests/unit/` — EKF/UKF/IMM/UKF 滤波 · Hungarian/JPDA 关联 · LiDAR/Radar/Camera 传感器 · RangeNoiseModel · BEV 可视化 · YAML loader
+- `tests/integration/` — e2e 端到端 · JPDA 回归
 
 ---
 
@@ -184,14 +203,16 @@ self-driving-sim/
 |------|------|------|
 | 🟢 **P0** | 最小可演示，跑通全链路 | ✅ |
 | 🟡 **P1** | 完整 5 传感器 + 真实场景 + 天气 + 传感器面板 | ✅ |
-| 🟠 **P2** | **UKF** ✅ · **JPDA** ✅ (有限制) · IMM · 密集场景优化 | 🟡 进行中 |
+| 🟠 **P2** | **UKF** ✅ · **JPDA** ✅ (有限制) · **IMM** ✅ · 距离依赖噪声 · 密集场景优化 | ✅ v0.2.2 完成 |
 | 🔴 **P3** | 深度学习融合 · BEV · 占用网络 · ROS 集成 | ⏳ |
 
 ### P2 已完成（v0.2.2）
 
 - ✅ `fusion/ukf.py` — UKF 跟踪器（CV + CA），sigma points + unscented transform
 - ✅ `fusion/jpda.py` — JPDA 关联（标准 marginal 公式 + NN-限制 + 速度稳定）
-- ✅ `fusion/tracker.py` — 支持 `association_mode='jpda'|'hungarian'` 和 `use_ukf=True|False`
+- ✅ `fusion/imm.py` — **IMM (CV+CA 交互多模型)**，高沠 5车 MOTA 0.895→0.942
+- ✅ `fusion/tracker.py` — 支持 `association_mode='jpda'|'hungarian'` 和 `use_ukf=True|False` `use_imm=True|False`
+- ✅ `sensors/range_model.py` — 距离依赖噪声 + 漏检率（LiDAR/Radar/Camera 共享）
 - ⚠️ **JPDA 限制**: 密集场景下 EKF 速度估计仍会漂移 (实测 5车 MOTA 负数)。
   2026-06-13 试过“3σ 紧门限 + β<0.1 miss + vel decay”修复，实测 MOTA 从
   0 跌到 -8.7（修复反而退化），已回滚。**生产环境请用 Hungarian**。
