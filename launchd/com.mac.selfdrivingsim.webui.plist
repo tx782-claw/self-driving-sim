@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.mac.selfdrivingsim.webui</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>-m</string>
+        <string>streamlit</string>
+        <string>run</string>
+        <string>app/webui.py</string>
+        <string>--server.port</string>
+        <string>8501</string>
+        <string>--server.address</string>
+        <string>0.0.0.0</string>
+        <string>--server.headless</string>
+        <string>true</string>
+        <string>--browser.gatherUsageStats</string>
+        <string>false</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/mac/.openclaw/workspace/self-driving-sim</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!--
+        崩了拉起，SIGTERM 正常退出不拉起（手动 stop 就是真停）
+        **不要加 ProcessType=Background**（会让 CPU 密集型任务被 macOS 限速）
+    -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/selfdrivingsim-webui.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/selfdrivingsim-webui.err.log</string>
+</dict>
+</plist>
