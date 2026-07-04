@@ -65,6 +65,7 @@ class CameraImage:
     timestamp: float
     image: np.ndarray  # (H, W, 3) RGB
     detections_2d: list = field(default_factory=list)  # 2D 框
+    detections_3d: list = field(default_factory=list)  # 3D 检测（用于 BEV 融合）
 
 
 @dataclass

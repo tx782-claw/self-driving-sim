@@ -161,7 +161,8 @@ class CameraSensor(BaseSensor):
             sensor_id=self.sensor_id,
             timestamp=t,
             image=img,
-            detections_2d=detections_2d
+            detections_2d=detections_2d,
+            detections_3d=detections_3d,
         )
         self._last_3d_dets = detections_3d
         return detections_3d
