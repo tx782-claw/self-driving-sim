@@ -184,12 +184,17 @@ def main():
         help="Adapter 不去重: 12 传感器通道 × GT (默认: dedup 关, 1 det/GT)")
     parser.add_argument("--tracker-dt", type=float, default=0.5,
         help="Tracker dt (s), 默认 0.5 (适配 nuScenes 2Hz keyframe)")
-    parser.add_argument("--gate-threshold", type=float, default=15.0,
-        help="Tracker Mahalanobis gate chi-square (默认 15.0)")
+    parser.add_argument("--gate-threshold", type=float, default=10.0,
+        help="Tracker Mahalanobis gate chi-square (默认 10.0)")
     parser.add_argument("--min-hits", type=int, default=3,
         help="Tracker min_hits_to_confirm (默认 3)")
-    parser.add_argument("--max-miss", type=int, default=5,
-        help="Tracker max_miss_streak (默认 5)")
+    parser.add_argument("--max-miss", type=int, default=1,
+        help="Tracker max_miss_streak (默认 1, IMM 多传感器下最准确)")
+    parser.add_argument("--association-mode", default="hungarian",
+        choices=["hungarian", "jpda"],
+        help="关联算法 (默认 hungarian; jpda 密集场景更稳健)")
+    parser.add_argument("--use-imm", action="store_true", default=True,
+        help="IMM (CV+CA 交互多模型) 代替单一 EKF (默认开)")
     args = parser.parse_args()
 
     print(f"=== nuScenes mini MOTA Baseline ===")
@@ -216,6 +221,8 @@ def main():
         min_hits_to_confirm=args.min_hits,
         max_miss_streak=args.max_miss,
         use_confidence_weighted=True,
+        association_mode=args.association_mode,
+        use_imm=args.use_imm,
     )
 
     results = []

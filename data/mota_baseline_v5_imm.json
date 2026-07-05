@@ -1,0 +1,157 @@
+{
+  "config": {
+    "dataroot": "/Users/mac/.openclaw/workspace/self-driving-sim/data/nuscenes",
+    "scenes": 10,
+    "max_frames": null,
+    "gate": 2.0,
+    "save": "data/mota_baseline_v5_imm.json",
+    "no_dedup": false,
+    "tracker_dt": 0.5,
+    "gate_threshold": 15.0,
+    "min_hits": 3,
+    "max_miss": 5,
+    "association_mode": "hungarian",
+    "use_imm": true
+  },
+  "tracker_kwargs": {
+    "dt": 0.5,
+    "gate_threshold": 15.0,
+    "min_hits_to_confirm": 3,
+    "max_miss_streak": 5,
+    "use_confidence_weighted": true,
+    "association_mode": "hungarian",
+    "use_imm": true
+  },
+  "scenes": [
+    {
+      "scene": "scene-0061",
+      "num_frames": 39,
+      "gt_total": 4699,
+      "fn": 3736,
+      "fp": 396,
+      "idsw": 289,
+      "motp": 0.7291030231571097,
+      "match_count": 963,
+      "n_unique_gt": 227,
+      "n_unique_pred": 81
+    },
+    {
+      "scene": "scene-0103",
+      "num_frames": 40,
+      "gt_total": 2090,
+      "fn": 1606,
+      "fp": 339,
+      "idsw": 98,
+      "motp": 0.7781785869319536,
+      "match_count": 484,
+      "n_unique_gt": 123,
+      "n_unique_pred": 46
+    },
+    {
+      "scene": "scene-0553",
+      "num_frames": 41,
+      "gt_total": 1991,
+      "fn": 1093,
+      "fp": 146,
+      "idsw": 22,
+      "motp": 0.4729449008180041,
+      "match_count": 898,
+      "n_unique_gt": 57,
+      "n_unique_pred": 33
+    },
+    {
+      "scene": "scene-0655",
+      "num_frames": 41,
+      "gt_total": 2373,
+      "fn": 1591,
+      "fp": 398,
+      "idsw": 272,
+      "motp": 0.5839390228483446,
+      "match_count": 782,
+      "n_unique_gt": 140,
+      "n_unique_pred": 62
+    },
+    {
+      "scene": "scene-0757",
+      "num_frames": 41,
+      "gt_total": 604,
+      "fn": 209,
+      "fp": 53,
+      "idsw": 15,
+      "motp": 0.330039173042306,
+      "match_count": 395,
+      "n_unique_gt": 29,
+      "n_unique_pred": 15
+    },
+    {
+      "scene": "scene-0796",
+      "num_frames": 40,
+      "gt_total": 716,
+      "fn": 368,
+      "fp": 357,
+      "idsw": 78,
+      "motp": 0.4117692011450634,
+      "match_count": 348,
+      "n_unique_gt": 51,
+      "n_unique_pred": 66
+    },
+    {
+      "scene": "scene-0916",
+      "num_frames": 41,
+      "gt_total": 2424,
+      "fn": 1731,
+      "fp": 357,
+      "idsw": 193,
+      "motp": 0.6476850257027593,
+      "match_count": 693,
+      "n_unique_gt": 95,
+      "n_unique_pred": 56
+    },
+    {
+      "scene": "scene-1077",
+      "num_frames": 41,
+      "gt_total": 909,
+      "fn": 535,
+      "fp": 373,
+      "idsw": 187,
+      "motp": 0.6081153812596325,
+      "match_count": 374,
+      "n_unique_gt": 72,
+      "n_unique_pred": 48
+    },
+    {
+      "scene": "scene-1094",
+      "num_frames": 40,
+      "gt_total": 1776,
+      "fn": 1204,
+      "fp": 314,
+      "idsw": 129,
+      "motp": 0.7063379810588245,
+      "match_count": 572,
+      "n_unique_gt": 85,
+      "n_unique_pred": 44
+    },
+    {
+      "scene": "scene-1100",
+      "num_frames": 40,
+      "gt_total": 956,
+      "fn": 513,
+      "fp": 126,
+      "idsw": 15,
+      "motp": 0.44635502883030204,
+      "match_count": 443,
+      "n_unique_gt": 32,
+      "n_unique_pred": 23
+    }
+  ],
+  "aggregate": {
+    "total_gt": 18538,
+    "total_fn": 12586,
+    "total_fp": 2859,
+    "total_idsw": 1298,
+    "MOTA": 0.09682813680008628,
+    "MOTP_m": 0.5900221972224655,
+    "scenes": 10
+  },
+  "elapsed_s": 2.402367115020752
+}
