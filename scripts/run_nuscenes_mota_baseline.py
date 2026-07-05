@@ -180,6 +180,16 @@ def main():
         help="匹配距离门限 (m)")
     parser.add_argument("--save", default=None,
         help="结果保存到 JSON 文件 (默认打印到 stdout)")
+    parser.add_argument("--no-dedup", action="store_true",
+        help="Adapter 不去重: 12 传感器通道 × GT (默认: dedup 关, 1 det/GT)")
+    parser.add_argument("--tracker-dt", type=float, default=0.5,
+        help="Tracker dt (s), 默认 0.5 (适配 nuScenes 2Hz keyframe)")
+    parser.add_argument("--gate-threshold", type=float, default=15.0,
+        help="Tracker Mahalanobis gate chi-square (默认 15.0)")
+    parser.add_argument("--min-hits", type=int, default=3,
+        help="Tracker min_hits_to_confirm (默认 3)")
+    parser.add_argument("--max-miss", type=int, default=5,
+        help="Tracker max_miss_streak (默认 5)")
     args = parser.parse_args()
 
     print(f"=== nuScenes mini MOTA Baseline ===")
@@ -187,20 +197,24 @@ def main():
     print(f"scenes  = {args.scenes}")
     print(f"gate    = {args.gate} m")
     print(f"max_frames per scene = {args.max_frames or 'all'}")
+    print(f"deduplicate = {not args.no_dedup}")
+    print(f"tracker dt = {args.tracker_dt}s")
+    print(f"tracker gate_threshold = {args.gate_threshold}")
     print()
 
     # gt mode = 无噪声, 每个 GT → 完美 detection
-    adapter = NuScenesAdapter(args.dataroot, version="v1.0-mini", mode="gt", verbose=False)
+    adapter = NuScenesAdapter(args.dataroot, version="v1.0-mini", mode="gt",
+        verbose=False, deduplicate=not args.no_dedup)
 
     scene_names = adapter.list_scenes()[:args.scenes]
     print(f"selected scenes: {scene_names}")
     print()
 
     tracker_kwargs = dict(
-        dt=0.05,
-        gate_threshold=15.0,
-        min_hits_to_confirm=2,
-        max_miss_streak=30,
+        dt=args.tracker_dt,
+        gate_threshold=args.gate_threshold,
+        min_hits_to_confirm=args.min_hits,
+        max_miss_streak=args.max_miss,
         use_confidence_weighted=True,
     )
 

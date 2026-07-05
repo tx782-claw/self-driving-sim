@@ -118,6 +118,7 @@ class NuScenesAdapter:
         mode: str = "gt",
         noise_model=None,
         verbose: bool = False,
+        deduplicate: bool = False,
     ):
         """
         Args:
@@ -126,6 +127,8 @@ class NuScenesAdapter:
             mode: 'gt' (无噪声) 或 'noisy' (叠加 RangeNoiseModel)
             noise_model: sensors.RangeNoiseModel 实例, mode='noisy' 时必传
             verbose: 是否打印加载进度
+            deduplicate: False=保留原始 12 传感器通道 (默认, tracker 依赖多传感器冗余);
+                       True=同 GT instance 只输出 1 个 detection (高级用户 / 自定义 tracker 用)
         """
         if mode not in ("gt", "noisy"):
             raise ValueError(f"mode must be 'gt' or 'noisy', got {mode!r}")
@@ -154,6 +157,7 @@ class NuScenesAdapter:
         self.noise_model = noise_model
         self.version = version
         self.dataroot = dataroot
+        self.deduplicate = deduplicate
 
     # ----------------- 场景元信息 -----------------
 
@@ -356,16 +360,27 @@ class NuScenesAdapter:
 
         # 按 sensor 通道生成 detection 列表
         result = {}
-        for nusc_channel, sensor_id in SENSOR_CHANNEL_MAP.items():
-            if nusc_channel not in data_tokens:
-                continue  # 该通道在当前 sample 无数据
-
+        if self.deduplicate:
+            # 去重: 同一 GT instance 只输出 1 个 detection (lidar_top 通道)
+            # 推荐 tracker 使用, 避免 12 通道 × GT 出现重复 track
             dets = []
             for tgt in per_target_ego:
-                det = self._build_one_detection(sensor_id, timestamp_s, tgt)
+                det = self._build_one_detection("lidar_top", timestamp_s, tgt)
                 if det is not None:
                     dets.append(det)
-            result[sensor_id] = dets
+            result["lidar_top"] = dets
+        else:
+            # 多传感器模式: 同一 GT 在 12 传感器通道都生成 detection (调试/融合研究用)
+            for nusc_channel, sensor_id in SENSOR_CHANNEL_MAP.items():
+                if nusc_channel not in data_tokens:
+                    continue  # 该通道在当前 sample 无数据
+
+                dets = []
+                for tgt in per_target_ego:
+                    det = self._build_one_detection(sensor_id, timestamp_s, tgt)
+                    if det is not None:
+                        dets.append(det)
+                result[sensor_id] = dets
 
         return result
 
