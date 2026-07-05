@@ -221,7 +221,8 @@ def run_nuscenes(scene_name, mode='gt', gate=10.0, min_hits=3,
         noise_model = RangeNoiseModel(max_range_m=80.0)
     adapter = NuScenesAdapter(dataroot, version='v1.0-mini',
                                mode=mode, noise_model=noise_model,
-                               verbose=False, deduplicate=False)
+                               verbose=False, deduplicate=False,
+                               load_sensor_data=True)
 
     tracker = MultiObjectTracker(
         dt=0.5,

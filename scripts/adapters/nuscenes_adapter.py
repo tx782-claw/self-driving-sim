@@ -119,6 +119,7 @@ class NuScenesAdapter:
         noise_model=None,
         verbose: bool = False,
         deduplicate: bool = False,
+        load_sensor_data: bool = False,
     ):
         """
         Args:
@@ -129,6 +130,9 @@ class NuScenesAdapter:
             verbose: 是否打印加载进度
             deduplicate: False=保留原始 12 传感器通道 (默认, tracker 依赖多传感器冗余);
                        True=同 GT instance 只输出 1 个 detection (高级用户 / 自定义 tracker 用)
+            load_sensor_data: False=仅返回 detections/GT (默认, 快速, 可跟踪);
+                        True=加载 lidar_top 点云 + 6 个 camera jpg (慢,
+                              但 webui 能呈现原始 sensor 数据; 默认 30 帧/n 场景用=True 合适)
         """
         if mode not in ("gt", "noisy"):
             raise ValueError(f"mode must be 'gt' or 'noisy', got {mode!r}")
@@ -158,6 +162,7 @@ class NuScenesAdapter:
         self.version = version
         self.dataroot = dataroot
         self.deduplicate = deduplicate
+        self.load_sensor_data = load_sensor_data
 
     # ----------------- 场景元信息 -----------------
 
@@ -269,7 +274,87 @@ class NuScenesAdapter:
         # 实际 tracker 调用应走 frame.all_sensors[...].detections
         # 这里把 detection 列表塞进一个临时映射, 由调用方决定怎么喂 tracker
         frame.detections_by_sensor = detections_by_sensor  # type: ignore[attr-defined]
+
+        # 5. 原始 sensor 数据 (webui BEV fusion / camera panel 需要)
+        #    仅当 load_sensor_data=True 时加载 (IO 成本, mini 每帧 ~40k LIDAR 点 + 1.4MB JPG)
+        if self.load_sensor_data:
+            all_sensors = self._build_sensor_data(sample, lidar_sd, timestamp_s)
+            frame.all_sensors = all_sensors  # type: ignore[attr-defined]
+
         return frame
+
+    def _build_sensor_data(
+        self, sample: dict, lidar_sd: dict, timestamp_s: float
+    ) -> dict:
+        """加载原始 sensor 数据: lidar_top 点云 + 6 个 camera jpg.
+
+        Returns: Dict[sensor_id, LidarScan | CameraImage | RadarTrack]
+        """
+        from core.data_types import LidarScan, CameraImage, RadarTrack
+        from PIL import Image
+
+        sensors = {}
+        dataroot = self.dataroot
+
+        # --- LiDAR_TOP 点云 (float32 x,y,z,intensity → (N,4) → 拆为 points + intensity) ---
+        for nusc_channel, sensor_id in [
+            ("LIDAR_TOP", "lidar_top"),
+        ]:
+            if nusc_channel not in sample["data"]:
+                continue
+            sd = self.nuscenes.get("sample_data", sample["data"][nusc_channel])
+            filepath = os.path.join(dataroot, sd["filename"])
+            if os.path.isfile(filepath):
+                pts = np.fromfile(filepath, dtype=np.float32).reshape(-1, 4)
+                # nuScenes: x=前, y=左, z=上 (与 self-driving-sim 同)
+                sensors[sensor_id] = LidarScan(
+                    sensor_id=sensor_id,
+                    timestamp=timestamp_s,
+                    points=pts[:, :3].astype(np.float32),
+                    intensity=pts[:, 3].astype(np.float32),
+                )
+
+        # --- 6 个 Camera JPG (顺序: front/front_left/front_right/back/back_left/back_right) ---
+        for nusc_channel, sensor_id in [
+            ("CAM_FRONT", "camera_front"),
+            ("CAM_FRONT_LEFT", "camera_front_left"),
+            ("CAM_FRONT_RIGHT", "camera_front_right"),
+            ("CAM_BACK", "camera_back"),
+            ("CAM_BACK_LEFT", "camera_back_left"),
+            ("CAM_BACK_RIGHT", "camera_back_right"),
+        ]:
+            if nusc_channel not in sample["data"]:
+                continue
+            sd = self.nuscenes.get("sample_data", sample["data"][nusc_channel])
+            filepath = os.path.join(dataroot, sd["filename"])
+            if os.path.isfile(filepath):
+                try:
+                    img = np.array(Image.open(filepath).convert("RGB"))
+                    sensors[sensor_id] = CameraImage(
+                        sensor_id=sensor_id,
+                        timestamp=timestamp_s,
+                        image=img,
+                    )
+                except Exception:
+                    pass  # 图损坏跳过, 不打破其他 sensor
+
+        # --- Radar (nuScenes RADAR 存为 .pcd 但仅 ~6 dims, 加载逻辑跳过. user 可以后期扩展) ---
+        # 为避免 webui "No Radar data" 警告, 造空 RadarTrack 记录存在.
+        for nusc_channel, sensor_id in [
+            ("RADAR_FRONT", "radar_front"),
+            ("RADAR_FRONT_LEFT", "radar_front_left"),
+            ("RADAR_FRONT_RIGHT", "radar_front_right"),
+            ("RADAR_BACK_LEFT", "radar_back_left"),
+            ("RADAR_BACK_RIGHT", "radar_back_right"),
+        ]:
+            if nusc_channel in sample["data"]:
+                sensors[sensor_id] = RadarTrack(
+                    sensor_id=sensor_id,
+                    timestamp=timestamp_s,
+                    detections=[],  # nuScenes RADAR raw 加载待扩展
+                )
+
+        return sensors
 
     def _build_ground_truth(
         self, ann_tokens: List[str], ego_pose: dict, timestamp_s: float
