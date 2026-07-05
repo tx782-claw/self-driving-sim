@@ -1,0 +1,22 @@
+# nuScenes mini v1.0-mini 原始 .tgz
+
+原始 .tgz 已从 `~/nuscenes/v1.0-mini.tgz` 删除 (2026-07-05 释放 4.17GB).
+
+## 已解压的数据
+当前目录结构:
+- `v1.0-mini/`         ← devkit 直读 (13 个 JSON + maps/samples/sweeps/)
+- `maps/, samples/, sweeps/` ← 来自 .tgz 解包
+
+如需重下 .tgz (供离线 / 迁移用):
+- URL: https://www.nuscenes.org/data/v1.0-mini.tgz
+- 大小: 4,167,696,325 bytes (3.88 GB)
+- 验证: sha1 090d2fe0e04028d7e56c6c0f98d577c2afa349e0
+        sha256/CRC32 由原始下载 aria2 -c 校验 (CRC32 = 0xBAF79B9E, gzip ISIZE = 1.1 GB mod 2^32)
+- 推荐: `aria2c -x 16 -s 16 https://www.nuscenes.org/data/v1.0-mini.tgz`
+- 替代: `curl -L -o v1.0-mini.tgz https://www.nuscenes.org/data/v1.0-mini.tgz`
+       (单连接 ~150KB/s, 40h; 推荐 aria2 multi-conn ~25MB/s, 3min)
+
+## 何时需要重下
+1. 跨机迁移 → 直接 rsync `data/nuscenes/v1.0-mini/` (5.1GB) 即可
+2. 验证完整性 → 对解压目录跑 nuScenes devkit 加载测试 (5/5 已通过)
+3. 重新训练 → 用 `data/nuscenes/v1.0-mini/` 现成数据, 不需要 .tgz
