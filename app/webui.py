@@ -363,17 +363,17 @@ if st.session_state.frames is not None:
     with col_l:
         st.subheader("🌐 3D 视图")
         st.plotly_chart(st.session_state.cached_3d[current_idx],
-                        width="stretch", key=f'3d_{current_idx}')
+                        use_container_width=True, key=f'3d_{current_idx}')
     with col_r:
         st.subheader("📐 俯视图 (BEV)")
         st.plotly_chart(st.session_state.cached_top[current_idx],
-                        width="stretch", key=f'top_{current_idx}')
+                        use_container_width=True, key=f'top_{current_idx}')
 
     # v0.2.2: BEV 鸟瞰融合图（单图展示 fusion 价值）
     st.divider()
     st.subheader("🛰️ BEV 融合视图 (LiDAR 灰度 + Radar 等高线 + Camera bbox + Track 协方差)")
     st.plotly_chart(st.session_state.cached_bev[current_idx],
-                    width="stretch", key=f'bev_{current_idx}')
+                    use_container_width=True, key=f'bev_{current_idx}')
 
     st.divider()
 
@@ -440,31 +440,31 @@ if st.session_state.frames is not None:
                     with col2:
                         lidar_view = st.radio("视角", ["bev", "3d"], key=f'lview_{current_idx}', horizontal=True)
                     st.plotly_chart(render_lidar_panel(current_frame, selected_lidar, lidar_view),
-                                    width="stretch", key=f'lpanel_{current_idx}')
+                                    use_container_width=True, key=f'lpanel_{current_idx}')
                 idx += 1
             if radars:
                 with st_sensor[idx]:
                     selected_radar = st.selectbox("Radar", radars, key=f'radar_{current_idx}')
                     st.plotly_chart(render_radar_panel(current_frame, selected_radar),
-                                    width="stretch", key=f'rpanel_{current_idx}')
+                                    use_container_width=True, key=f'rpanel_{current_idx}')
                 idx += 1
             if cameras:
                 with st_sensor[idx]:
                     selected_camera = st.selectbox("Camera", cameras, key=f'cam_{current_idx}')
                     st.plotly_chart(render_camera_panel(current_frame, selected_camera),
-                                    width="stretch", key=f'cpanel_{current_idx}')
+                                    use_container_width=True, key=f'cpanel_{current_idx}')
                 idx += 1
             if imus:
                 with st_sensor[idx]:
                     selected_imu = st.selectbox("IMU", imus, key=f'imu_{current_idx}')
                     st.plotly_chart(render_imu_panel(current_frame, selected_imu),
-                                    width="stretch", key=f'ipanel_{current_idx}')
+                                    use_container_width=True, key=f'ipanel_{current_idx}')
                 idx += 1
             if gpses:
                 with st_sensor[idx]:
                     selected_gps = st.selectbox("GPS", gpses, key=f'gps_{current_idx}')
                     st.plotly_chart(render_gps_panel(current_frame, selected_gps),
-                                    width="stretch", key=f'gpanel_{current_idx}')
+                                    use_container_width=True, key=f'gpanel_{current_idx}')
                 idx += 1
 
     # ===== 指标时序曲线 =====
@@ -489,7 +489,7 @@ if st.session_state.frames is not None:
             legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             margin=dict(l=0, r=0, t=30, b=0),
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     with tab2:
         fig = go.Figure()
@@ -504,7 +504,7 @@ if st.session_state.frames is not None:
             height=350, legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             margin=dict(l=0, r=0, t=30, b=0),
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     with tab3:
         # 跟踪精度/召回时序
@@ -525,7 +525,7 @@ if st.session_state.frames is not None:
             height=350, legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1),
             margin=dict(l=0, r=0, t=30, b=0),
         )
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     # ===== 详细指标 + 导出 =====
     st.divider()

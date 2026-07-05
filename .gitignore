@@ -17,6 +17,8 @@ dist/
 
 # 数据 / 输出
 data/cache/
+data/nuscenes/             # nuScenes mini 5GB 解压 (symlink + .tgz 已 tracked)
+data/*.tgz                # 大 tgz 归档 (走 git-lfs 或外置)
 scenarios_data/*.png
 scenarios_data/*.gif
 scenarios_data/*.mp4
