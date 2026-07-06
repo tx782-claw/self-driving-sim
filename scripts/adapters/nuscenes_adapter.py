@@ -280,6 +280,15 @@ class NuScenesAdapter:
         if self.load_sensor_data:
             all_sensors = self._build_sensor_data(sample, lidar_sd, timestamp_s)
             frame.all_sensors = all_sensors  # type: ignore[attr-defined]
+            # 同步填充单数字段 (与仿真 mode 一致), 下游 webui / gif_export / export_session
+            # 都读 frame.lidar_data / frame.camera_data / frame.radar_data 单数字段.
+            # 取同类 sensor 的第一个 (lidar_top / camera_front / radar_front) 作为代表.
+            if 'lidar_top' in all_sensors:
+                frame.lidar_data = all_sensors['lidar_top']
+            if 'camera_front' in all_sensors:
+                frame.camera_data = all_sensors['camera_front']
+            if 'radar_front' in all_sensors:
+                frame.radar_data = all_sensors['radar_front']
 
         return frame
 
@@ -296,7 +305,10 @@ class NuScenesAdapter:
         sensors = {}
         dataroot = self.dataroot
 
-        # --- LiDAR_TOP 点云 (float32 x,y,z,intensity → (N,4) → 拆为 points + intensity) ---
+        # --- LiDAR_TOP 点云 (float32 x,y,z,intensity,ring_index → (N,5)) ---
+        # nuScenes mini 的 .pcd.bin 实际是 5 列: x, y, z, intensity, ring_index
+        # devkit 用 reshape(-1, 5), 错当成 4 列会把 ring_index 当 z/intensity 读
+        # (踩坑 2026-07-06: 之前 reshape(-1, 4) 导致 z 显示为 0~31, range 错位)
         for nusc_channel, sensor_id in [
             ("LIDAR_TOP", "lidar_top"),
         ]:
@@ -305,12 +317,28 @@ class NuScenesAdapter:
             sd = self.nuscenes.get("sample_data", sample["data"][nusc_channel])
             filepath = os.path.join(dataroot, sd["filename"])
             if os.path.isfile(filepath):
-                pts = np.fromfile(filepath, dtype=np.float32).reshape(-1, 4)
+                pts_raw = np.fromfile(filepath, dtype=np.float32)
+                if pts_raw.size % 5 == 0:
+                    pts = pts_raw.reshape(-1, 5)[:, :4]  # nuScenes mini 格式
+                else:
+                    pts = pts_raw.reshape(-1, 4)  # 备选 4 列格式 (老版本 / 其他数据集)
+                # ⚠️ nuScenes .pcd.bin 也是 sensor frame 坐标
+                # 必须用 calibrated_sensor rotate+translate 转到 ego frame
+                # (与雷达同样的隐凅之错 — 之前 LIDAR_TOP 看起来 OK 是因为它
+                # 装在 (0,0,1.7) yaw=0, sensor frame 与 ego frame 几乎重合;
+                # 全数据集用上后遇到非中心安装的 sensor 会性该爆资产)
+                cs = self.nuscenes.get(
+                    "calibrated_sensor", sd["calibrated_sensor_token"]
+                )
+                rotmat = _quat_to_rotmat(cs["rotation"])
+                pts_xyz = pts[:, :3] @ rotmat.T  # (N,3) @ (3,3) = (N,3) 逐行 rotate
+                trans = np.array(cs["translation"])
+                pts_xyz = pts_xyz + trans  # translate
                 # nuScenes: x=前, y=左, z=上 (与 self-driving-sim 同)
                 sensors[sensor_id] = LidarScan(
                     sensor_id=sensor_id,
                     timestamp=timestamp_s,
-                    points=pts[:, :3].astype(np.float32),
+                    points=pts_xyz.astype(np.float32),
                     intensity=pts[:, 3].astype(np.float32),
                 )
 
@@ -338,8 +366,12 @@ class NuScenesAdapter:
                 except Exception:
                     pass  # 图损坏跳过, 不打破其他 sensor
 
-        # --- Radar (nuScenes RADAR 存为 .pcd 但仅 ~6 dims, 加载逻辑跳过. user 可以后期扩展) ---
-        # 为避免 webui "No Radar data" 警告, 造空 RadarTrack 记录存在.
+        # --- Radar (nuScenes RADAR .pcd - 18 fields, 用 devkit 的 RadarPointCloud 解析) ---
+        # 复用 nuscenes-devkit, 避免重新逆 binary 布局
+        # (踩坑 2026-07-06: 直慊 8.14 按 SIZE 字段打包读 → 74 points - 个个错位, 看 POINTS header 而不实际 byte position
+        #  devkit 的 from_file 是该 字段顺序 + 默认 filter 的了参考实现)
+        from nuscenes.utils.data_classes import RadarPointCloud
+        from core.data_types import Detection
         for nusc_channel, sensor_id in [
             ("RADAR_FRONT", "radar_front"),
             ("RADAR_FRONT_LEFT", "radar_front_left"),
@@ -347,11 +379,68 @@ class NuScenesAdapter:
             ("RADAR_BACK_LEFT", "radar_back_left"),
             ("RADAR_BACK_RIGHT", "radar_back_right"),
         ]:
-            if nusc_channel in sample["data"]:
+            if nusc_channel not in sample["data"]:
+                continue
+            sd = self.nuscenes.get("sample_data", sample["data"][nusc_channel])
+            filepath = os.path.join(dataroot, sd["filename"])
+            if not os.path.isfile(filepath):
+                continue
+            try:
+                radar_pc = RadarPointCloud.from_file(filepath)
+                # ⚠️ devkit 返回的是 sensor frame 坐标!
+                # 必须转到 ego frame 才能跟其他 sensor / GT / tracks 一致
+                # calibrated_sensor 含 sensor 在 ego 上的 position + rotation quaternion
+                # (踩坑 2026-07-06: 之前不转, radar_back_* 全出现在 x > 0 前方 —
+                #  用户报告 "radar 点云都在 ego 右侧横向排列", 实际是 frame 错位)
+                cs = self.nuscenes.get(
+                    "calibrated_sensor", sd["calibrated_sensor_token"]
+                )
+                # devkit rotate 需要 3x3 rotation matrix, 不是 quaternion
+                # (二次踩坑: 之前传 quaternion 进 rotate, 报 type error 后改成传 q 但
+                #  devkit 要的是 matrix, 点了全被 translate 到 0-过滤光了)
+                rotmat = _quat_to_rotmat(cs["rotation"])
+                radar_pc.rotate(rotmat)
+                radar_pc.translate(np.array(cs["translation"]))
+                # radar_pc.points shape: (18, N)
+                # 18 fields: x, y, z, dyn_prop, id, rcs, vx, vy, vx_comp, vy_comp,
+                #            is_quality_valid, ambig_state, x_rms, y_rms, invalid_state, pdh0, vx_rms, vy_rms
+                arr = radar_pc.points  # (18, N) — 这下 x, y, z 是 ego frame 坐标了
+                n_pts = arr.shape[1]
+                detections = []
+                for i in range(n_pts):
+                    x, y, z = float(arr[0, i]), float(arr[1, i]), float(arr[2, i])
+                    if x == 0 and y == 0 and z == 0:  # NaN 填充点跳过
+                        continue
+                    rcs = float(arr[5, i])        # dBsm
+                    vx_c = float(arr[8, i])       # vx_comp (考虑 ego 自身运动)
+                    vy_c = float(arr[9, i])       # vy_comp
+                    range_m = float(np.linalg.norm([x, y, z]))
+                    detections.append(Detection(
+                        sensor_id=sensor_id,
+                        timestamp=timestamp_s,
+                        position=np.array([x, y, z], dtype=np.float32),
+                        velocity=np.array([vx_c, vy_c, 0.0], dtype=np.float32),
+                        object_id=None,
+                        confidence=0.95,  # radar 设高信度
+                        attributes={
+                            "range_m": range_m,
+                            "rcs_dbsm": rcs,
+                            "doppler_mps": float(np.hypot(vx_c, vy_c)),
+                            "azimuth_deg": float(np.rad2deg(np.arctan2(y, max(x, 1e-3)))),
+                            "dyn_prop": int(arr[3, i]),
+                        },
+                    ))
                 sensors[sensor_id] = RadarTrack(
                     sensor_id=sensor_id,
                     timestamp=timestamp_s,
-                    detections=[],  # nuScenes RADAR raw 加载待扩展
+                    detections=detections,
+                )
+            except Exception as e:
+                # RADAR 损坏也不中断其他 sensor
+                sensors[sensor_id] = RadarTrack(
+                    sensor_id=sensor_id,
+                    timestamp=timestamp_s,
+                    detections=[],
                 )
 
         return sensors

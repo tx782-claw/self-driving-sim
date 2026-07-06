@@ -16,11 +16,17 @@ from core.data_types import SimFrame
 
 def render_frame_to_png(frame: SimFrame, ego_pos=None, gt=None, tracks=None,
                         lidar_points=None, title="", out_path=None,
-                        ego_centered: bool = True) -> Optional[bytes]:
+                        ego_centered: bool = True,
+                        data_in_ego_centric: bool = False) -> Optional[bytes]:
     """
     渲染单帧为 PNG，返回 bytes 或保存到文件
+
     Args:
         ego_centered: True=以自车为中心 (推荐) / False=世界坐标
+        data_in_ego_centric: True=gt/tracks/lidar_points 已是 ego-centric 坐标系
+                             (nuScenes adapter, 已含 inverse rotation),
+                             不再做 position - ego_pos 也不做 rotate_xy
+                             False=global 坐标系 (仿真), 做 translation + heading rotation
     """
     if ego_pos is None:
         ego_pos = frame.ego_state.position
@@ -34,18 +40,24 @@ def render_frame_to_png(frame: SimFrame, ego_pos=None, gt=None, tracks=None,
     # 是否变换到自车中心坐标系
     if ego_centered:
         ego_render = np.array([0.0, 0.0, 0.0])
-        gt_render = [g.position - ego_pos for g in gt]
-        trk_render = [t.position - ego_pos for t in tracks]
-        ego_heading = frame.ego_state.heading
-        ego_yaw = ego_heading  # 简化: 假设朝向 +X
-        cos_y, sin_y = np.cos(-ego_yaw), np.sin(-ego_yaw)
-        def rotate_xy(v):
-            x, y, z = v
-            return np.array([cos_y * x - sin_y * y, sin_y * x + cos_y * y, z])
-        gt_render = [rotate_xy(v) for v in gt_render]
-        trk_render = [rotate_xy(v) for v in trk_render]
-        if lidar_points is not None and len(lidar_points) > 0:
-            lidar_points = np.array([rotate_xy(p - ego_pos) for p in lidar_points])
+        if data_in_ego_centric:
+            # nuScenes adapter: GT/tracks/lidar 已是 ego-centric (含 inverse rotation)
+            gt_render = [g.position for g in gt]
+            trk_render = [t.position for t in tracks]
+        else:
+            # 仿真模式: global 坐标, 做 translation + heading rotation
+            gt_render = [g.position - ego_pos for g in gt]
+            trk_render = [t.position - ego_pos for t in tracks]
+            ego_heading = frame.ego_state.heading
+            ego_yaw = ego_heading  # 简化: 假设朝向 +X
+            cos_y, sin_y = np.cos(-ego_yaw), np.sin(-ego_yaw)
+            def rotate_xy(v):
+                x, y, z = v
+                return np.array([cos_y * x - sin_y * y, sin_y * x + cos_y * y, z])
+            gt_render = [rotate_xy(v) for v in gt_render]
+            trk_render = [rotate_xy(v) for v in trk_render]
+            if lidar_points is not None and len(lidar_points) > 0:
+                lidar_points = np.array([rotate_xy(p - ego_pos) for p in lidar_points])
     else:
         ego_render = ego_pos
         gt_render = [g.position for g in gt]
@@ -126,7 +138,8 @@ def render_frame_to_png(frame: SimFrame, ego_pos=None, gt=None, tracks=None,
 
 def export_gif(frames: List[SimFrame], out_path: str,
                duration_ms: int = 80, max_frames: int = 200,
-               progress_callback=None) -> int:
+               progress_callback=None,
+               data_in_ego_centric: bool = False) -> int:
     """
     导出 GIF 动画
     Args:
@@ -154,7 +167,8 @@ def export_gif(frames: List[SimFrame], out_path: str,
     total = len(sampled)
     for i, frame in enumerate(sampled):
         title = f"t={frame.timestamp:.2f}s | Tracks: {len(frame.tracks)} | GT: {len(frame.ground_truth)}"
-        png_bytes = render_frame_to_png(frame, title=title, out_path=None, ego_centered=True)
+        png_bytes = render_frame_to_png(frame, title=title, out_path=None, ego_centered=True,
+                                         data_in_ego_centric=data_in_ego_centric)
         img = Image.open(io.BytesIO(png_bytes))
         # 转为 RGB（GIF 不支持 RGBA）
         if img.mode == 'RGBA':
@@ -182,7 +196,8 @@ def export_gif(frames: List[SimFrame], out_path: str,
 
 
 def export_mp4(frames: List[SimFrame], out_path: str,
-               fps: int = 20, max_frames: int = 300) -> int:
+               fps: int = 20, max_frames: int = 300,
+               data_in_ego_centric: bool = False) -> int:
     """
     导出 MP4 (用 OpenCV)
     """
@@ -201,7 +216,8 @@ def export_mp4(frames: List[SimFrame], out_path: str,
         return 0
 
     # 用第一帧确定尺寸
-    first_png = render_frame_to_png(sampled[0], out_path=None)
+    first_png = render_frame_to_png(sampled[0], out_path=None,
+                                     data_in_ego_centric=data_in_ego_centric)
     import io
     from PIL import Image
     first_img = Image.open(io.BytesIO(first_png))
@@ -212,7 +228,8 @@ def export_mp4(frames: List[SimFrame], out_path: str,
 
     for frame in sampled:
         title = f"t={frame.timestamp:.2f}s | Tracks: {len(frame.tracks)} | GT: {len(frame.ground_truth)}"
-        png_bytes = render_frame_to_png(frame, title=title, out_path=None)
+        png_bytes = render_frame_to_png(frame, title=title, out_path=None,
+                                         data_in_ego_centric=data_in_ego_centric)
         # PIL → OpenCV (BGR)
         img = Image.open(io.BytesIO(png_bytes)).convert('RGB')
         arr = np.array(img)  # RGB

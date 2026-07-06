@@ -425,6 +425,10 @@ if st.session_state.frames is not None:
     # 这样 autoplay 不需要每帧重生成 Plotly figure
     if 'cached_3d' not in st.session_state or len(st.session_state.cached_3d) != n_frames:
         from visualization import render_frame_plotly, render_topdown_plotly, render_bev_fusion
+        # nuScenes adapter 输出的 ground_truth/tracks 已经是 ego-centric 坐标系
+        # 仿真 SimFrame 输出的是 global 坐标系
+        # view 函数需要根据坐标系决定是否再减 ego_pos
+        ego_centric_data = data_source.startswith("真实")
         cache_3d = []
         cache_top = []
         cache_bev = []  # v0.2.2: BEV 融合图
@@ -438,11 +442,13 @@ if st.session_state.frames is not None:
                 tracks=f.tracks,
                 lidar_points=lpts,
                 title=f"Frame #{i+1} @ t={f.timestamp:.2f}s",
+                data_in_ego_centric=ego_centric_data,
             ))
             cache_top.append(render_topdown_plotly(
                 ego_pos=f.ego_state.position,
                 ground_truth=f.ground_truth,
                 tracks=f.tracks,
+                data_in_ego_centric=ego_centric_data,
             ))
             # BEV 融合图
             rdet = f.radar_data.detections if f.radar_data else None
@@ -456,6 +462,7 @@ if st.session_state.frames is not None:
                 radar_detections=rdet,
                 camera_detections=cdet,
                 title=f"BEV Fusion @ t={f.timestamp:.2f}s",
+                data_in_ego_centric=ego_centric_data,
             ))
             if (i+1) % 20 == 0 or i == n_frames - 1:
                 prog.progress((i+1)/n_frames, text=f"⚙️ 预渲染 3D 图... {i+1}/{n_frames}")
@@ -514,6 +521,8 @@ if st.session_state.frames is not None:
             render_lidar_panel, render_radar_panel, render_camera_panel,
             render_imu_panel, render_gps_panel
         )
+        # nuScenes adapter 输出的 sensor data 是 lidar frame (ego-centric), 不需再减 ego_pos
+        ego_centric_data = data_source.startswith("真实")
         lidars = list(current_frame.get_lidars().keys())
         radars = list(current_frame.get_radars().keys())
         cameras = list(current_frame.get_cameras().keys())
@@ -544,13 +553,15 @@ if st.session_state.frames is not None:
                         selected_lidar = st.selectbox("LiDAR", lidars, key=f'lidar_{current_idx}')
                     with col2:
                         lidar_view = st.radio("视角", ["bev", "3d"], key=f'lview_{current_idx}', horizontal=True)
-                    st.plotly_chart(render_lidar_panel(current_frame, selected_lidar, lidar_view),
+                    st.plotly_chart(render_lidar_panel(current_frame, selected_lidar, lidar_view,
+                                                       data_in_ego_centric=ego_centric_data),
                                     use_container_width=True, key=f'lpanel_{current_idx}')
                 idx += 1
             if radars:
                 with st_sensor[idx]:
                     selected_radar = st.selectbox("Radar", radars, key=f'radar_{current_idx}')
-                    st.plotly_chart(render_radar_panel(current_frame, selected_radar),
+                    st.plotly_chart(render_radar_panel(current_frame, selected_radar,
+                                                        data_in_ego_centric=ego_centric_data),
                                     use_container_width=True, key=f'rpanel_{current_idx}')
                 idx += 1
             if cameras:
@@ -707,7 +718,8 @@ if st.session_state.frames is not None:
                 import tempfile
                 tmp = tempfile.NamedTemporaryFile(suffix='.gif', delete=False)
                 tmp.close()
-                n = export_gif(frames, tmp.name, duration_ms=80, max_frames=200)
+                n = export_gif(frames, tmp.name, duration_ms=80, max_frames=200,
+                                data_in_ego_centric=data_source.startswith("真实"))
                 if n > 0:
                     with open(tmp.name, 'rb') as f:
                         gif_bytes = f.read()

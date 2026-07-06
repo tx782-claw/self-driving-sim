@@ -195,6 +195,10 @@ def main():
         help="关联算法 (默认 hungarian; jpda 密集场景更稳健)")
     parser.add_argument("--use-imm", action="store_true", default=True,
         help="IMM (CV+CA 交互多模型) 代替单一 EKF (默认开)")
+    parser.add_argument("--noisy", action="store_true",
+        help="加 RangeNoiseModel 模拟 sensor noise (mode='noisy')")
+    parser.add_argument("--noise-max-range", type=float, default=80.0,
+        help="RangeNoiseModel max_range_m (默认 80m)")
     args = parser.parse_args()
 
     print(f"=== nuScenes mini MOTA Baseline ===")
@@ -208,8 +212,15 @@ def main():
     print()
 
     # gt mode = 无噪声, 每个 GT → 完美 detection
-    adapter = NuScenesAdapter(args.dataroot, version="v1.0-mini", mode="gt",
-        verbose=False, deduplicate=not args.no_dedup)
+    # noisy mode = 加 RangeNoiseModel (测鲁棒性)
+    mode = "noisy" if args.noisy else "gt"
+    noise_model = None
+    if args.noisy:
+        from sensors.range_model import RangeNoiseModel
+        noise_model = RangeNoiseModel(max_range_m=args.noise_max_range)
+    adapter = NuScenesAdapter(args.dataroot, version="v1.0-mini", mode=mode,
+        verbose=False, deduplicate=not args.no_dedup,
+        noise_model=noise_model)
 
     scene_names = adapter.list_scenes()[:args.scenes]
     print(f"selected scenes: {scene_names}")

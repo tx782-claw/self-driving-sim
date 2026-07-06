@@ -63,12 +63,13 @@ def render_bev_fusion(ego_pos: np.ndarray,
                       camera_detections: list = None,
                       range_m: float = 60.0,
                       title: str = "BEV Fusion",
-                      out_path: str = None) -> 'go.Figure':
+                      out_path: str = None,
+                      data_in_ego_centric: bool = False) -> 'go.Figure':
     """
     BEV 鸟瞰融合视图 (Plotly)
 
     Args:
-        ego_pos: 自车世界坐标
+        ego_pos: 自车世界坐标 (global); 若 data_in_ego_centric=True, 此参数忽略
         ground_truth: list of GroundTruthObj
         tracks: list of TrackedObject
         lidar_points: (N, 3) LiDAR 点云
@@ -76,12 +77,21 @@ def render_bev_fusion(ego_pos: np.ndarray,
         radar_detections: list of Detection (Radar)
         camera_detections: list of Detection (Camera, 含 bbox_2d)
         range_m: 显示范围 (前/后/左/右)
+        data_in_ego_centric: True=ground_truth/tracks/lidar_points 已是 ego-centric 坐标系
+                             (nuScenes adapter 模式), 不再减 ego_pos
+                             False=global 坐标系, 减 ego_pos 转 ego-centric
     """
     fig = go.Figure()
 
+    # 决定参考点 (0,0) 位置
+    if data_in_ego_centric:
+        ref_ego = np.zeros(2)
+    else:
+        ref_ego = ego_pos[:2]
+
     # 1. LiDAR 灰度 BEV
     if lidar_points is not None and len(lidar_points) > 0:
-        pts = _ego_centric(lidar_points[:, :2], ego_pos[:2])
+        pts = lidar_points[:, :2] - ref_ego
         # 限 range
         mask = (np.abs(pts[:, 0]) <= range_m) & (np.abs(pts[:, 1]) <= range_m)
         pts_f = pts[mask]
@@ -94,7 +104,7 @@ def render_bev_fusion(ego_pos: np.ndarray,
             x=pts_f[:, 0], y=pts_f[:, 1],
             mode='markers',
             marker=dict(
-                size=1.5,
+                size=3,
                 color=intens,
                 colorscale='Greys',
                 cmin=0.0, cmax=1.0,
@@ -108,7 +118,7 @@ def render_bev_fusion(ego_pos: np.ndarray,
     # 2. Radar RCS 等高线（多个 det → 多组小等高线）
     if radar_detections:
         for det in radar_detections:
-            pos_ego = det.position[:2] - ego_pos[:2]
+            pos_ego = det.position[:2] - ref_ego
             rcs_db = det.attributes.get('rcs_dbsm', 0.0)
             rcs_norm = max(0, min(1, (rcs_db + 20) / 40))  # -20~20 dBsm → 0~1
             # RCS 越大 → 等高线越大（线性 1~3m）
@@ -128,7 +138,7 @@ def render_bev_fusion(ego_pos: np.ndarray,
     # 3. Camera bbox 投影
     if camera_detections:
         for det in camera_detections:
-            pos_ego = det.position[:2] - ego_pos[:2]
+            pos_ego = det.position[:2] - ref_ego
             # 简化：bbox 显示成 2m × 4m 的矩形 (FOV 方向)
             heading = 0.0  # 简化：固定朝前
             box_size = det.attributes.get('size', np.array([4.5, 1.8]))
@@ -156,7 +166,7 @@ def render_bev_fusion(ego_pos: np.ndarray,
 
     # 4. GT (黄色叉)
     for gt in ground_truth:
-        pos_ego = gt.position[:2] - ego_pos[:2]
+        pos_ego = gt.position[:2] - ref_ego
         fig.add_trace(go.Scatter(
             x=[pos_ego[0]], y=[pos_ego[1]],
             mode='markers',
@@ -169,7 +179,7 @@ def render_bev_fusion(ego_pos: np.ndarray,
 
     # 5. Track (红色圆 + 协方差椭圆)
     for trk in tracks:
-        pos_ego = trk.position[:2] - ego_pos[:2]
+        pos_ego = trk.position[:2] - ref_ego
         fig.add_trace(go.Scatter(
             x=[pos_ego[0]], y=[pos_ego[1]],
             mode='markers',

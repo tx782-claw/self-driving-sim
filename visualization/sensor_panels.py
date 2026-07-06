@@ -12,13 +12,17 @@ from core.data_types import SimFrame
 
 
 def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
-                      view: str = "bev") -> go.Figure:
+                      view: str = "bev", data_in_ego_centric: bool = False) -> go.Figure:
     """
     LiDAR 独立面板
+
     Args:
         frame: SimFrame
         sensor_id: LiDAR 传感器 ID
         view: "bev" 俯视 / "3d" 三维
+        data_in_ego_centric: True=points 已是 lidar frame (ego-centric) 坐标 (nuScenes adapter),
+                             不再做 ego_pos 减法
+                             False=global 坐标 (仿真), 做 points - ego_pos 转 ego-centric
     """
     lidars = frame.get_lidars()
     if sensor_id not in lidars:
@@ -34,8 +38,14 @@ def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
     if points is None or len(points) == 0:
         return _empty_panel(f"{sensor_id}: no points")
 
-    ego_pos = frame.ego_state.position
-    rel_pts = points - ego_pos
+    if data_in_ego_centric:
+        # nuScenes adapter: lidar points 已是 lidar frame (在车上 1.7m) ≈ ego frame
+        # xy 平面一致, 不需要减 ego_pos (否则会双减, 跑到 1000m 外)
+        rel_pts = points
+    else:
+        # 仿真: points 是 global, 转 ego-centric
+        ego_pos = frame.ego_state.position
+        rel_pts = points - ego_pos
     dets = scan.detections
 
     if view == "bev":
@@ -47,12 +57,12 @@ def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
                 rel_pts = rel_pts[idx]
                 if intensity is not None:
                     intensity = intensity[idx]
-            # 强度着色
+            # 强度着色 (size 4 让 34752 点云清晰可辨)
             if intensity is not None:
                 fig.add_trace(go.Scatter(
                     x=rel_pts[:, 0], y=rel_pts[:, 1],
                     mode='markers',
-                    marker=dict(size=2, color=intensity, colorscale='Greys',
+                    marker=dict(size=4, color=intensity, colorscale='Greys',
                                 showscale=True, colorbar=dict(title='Intensity', x=1.0)),
                     name='Points',
                     hovertemplate='x: %{x:.1f}<br>y: %{y:.1f}<br>z: %{customdata[0]:.1f}',
@@ -62,12 +72,15 @@ def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
                 fig.add_trace(go.Scatter(
                     x=rel_pts[:, 0], y=rel_pts[:, 1],
                     mode='markers',
-                    marker=dict(size=2, color='lightgray'),
+                    marker=dict(size=4, color='lightgray'),
                     name='Points',
                 ))
         # 检测目标
         for i, det in enumerate(dets):
-            pos = det.position - ego_pos
+            if data_in_ego_centric:
+                pos = det.position
+            else:
+                pos = det.position - ego_pos
             fig.add_trace(go.Scatter(
                 x=[pos[0]], y=[pos[1]], mode='markers+text',
                 marker=dict(size=12, color='red', symbol='square', line=dict(color='darkred', width=2)),
@@ -105,7 +118,7 @@ def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
             rel_pts = rel_pts[idx]
         fig.add_trace(go.Scatter3d(
             x=rel_pts[:, 0], y=rel_pts[:, 1], z=rel_pts[:, 2] if rel_pts.shape[1] > 2 else np.zeros(len(rel_pts)),
-            mode='markers', marker=dict(size=1, color='lightgray', opacity=0.5),
+            mode='markers', marker=dict(size=3, color='lightgray', opacity=0.5),
             name='Points', hoverinfo='skip',
         ))
         fig.add_trace(go.Scatter3d(
@@ -125,9 +138,13 @@ def render_lidar_panel(frame: SimFrame, sensor_id: str = "lidar_top",
         return _empty_panel(f"Unknown view: {view}")
 
 
-def render_radar_panel(frame: SimFrame, sensor_id: str = "radar_front") -> go.Figure:
+def render_radar_panel(frame: SimFrame, sensor_id: str = "radar_front",
+                      data_in_ego_centric: bool = False) -> go.Figure:
     """
     Radar 独立面板 - 距离-多普勒 + 方位角
+
+    Args:
+        data_in_ego_centric: True=detection 已是 ego-centric (nuScenes), 不减 ego_pos
     """
     radars = frame.get_radars()
     if sensor_id not in radars:
@@ -136,7 +153,6 @@ def render_radar_panel(frame: SimFrame, sensor_id: str = "radar_front") -> go.Fi
         sensor_id = list(radars.keys())[0]
     track = radars[sensor_id]
     dets = track.detections
-    ego_pos = frame.ego_state.position
 
     if not dets:
         return _empty_panel(f"{sensor_id}: no detections")
@@ -157,7 +173,7 @@ def render_radar_panel(frame: SimFrame, sensor_id: str = "radar_front") -> go.Fi
     positions_x = []
     positions_y = []
     for i, det in enumerate(dets):
-        rel = det.position - ego_pos
+        rel = det.position
         r = det.attributes.get('range_m', float(np.linalg.norm(rel)))
         d = det.attributes.get('doppler_mps', 0.0)
         az = det.attributes.get('azimuth_deg', 0.0)

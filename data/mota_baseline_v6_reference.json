@@ -1,0 +1,159 @@
+{
+  "config": {
+    "dataroot": "/Users/mac/.openclaw/workspace/self-driving-sim/data/nuscenes",
+    "scenes": 10,
+    "max_frames": 5,
+    "gate": 2.0,
+    "save": "data/mota_baseline_v6_reference.json",
+    "no_dedup": false,
+    "tracker_dt": 0.5,
+    "gate_threshold": 10.0,
+    "min_hits": 3,
+    "max_miss": 1,
+    "association_mode": "hungarian",
+    "use_imm": true,
+    "noisy": false,
+    "noise_max_range": 80.0
+  },
+  "tracker_kwargs": {
+    "dt": 0.5,
+    "gate_threshold": 10.0,
+    "min_hits_to_confirm": 3,
+    "max_miss_streak": 1,
+    "use_confidence_weighted": true,
+    "association_mode": "hungarian",
+    "use_imm": true
+  },
+  "scenes": [
+    {
+      "scene": "scene-0061",
+      "num_frames": 5,
+      "gt_total": 430,
+      "fn": 293,
+      "fp": 8,
+      "idsw": 26,
+      "motp": 0.46162761957392345,
+      "match_count": 137,
+      "n_unique_gt": 108,
+      "n_unique_pred": 51
+    },
+    {
+      "scene": "scene-0103",
+      "num_frames": 5,
+      "gt_total": 163,
+      "fn": 95,
+      "fp": 12,
+      "idsw": 7,
+      "motp": 0.3849195257363233,
+      "match_count": 68,
+      "n_unique_gt": 44,
+      "n_unique_pred": 26
+    },
+    {
+      "scene": "scene-0553",
+      "num_frames": 5,
+      "gt_total": 222,
+      "fn": 112,
+      "fp": 3,
+      "idsw": 6,
+      "motp": 0.30548515509316637,
+      "match_count": 110,
+      "n_unique_gt": 46,
+      "n_unique_pred": 27
+    },
+    {
+      "scene": "scene-0655",
+      "num_frames": 5,
+      "gt_total": 211,
+      "fn": 120,
+      "fp": 13,
+      "idsw": 24,
+      "motp": 0.39161553140431044,
+      "match_count": 91,
+      "n_unique_gt": 54,
+      "n_unique_pred": 32
+    },
+    {
+      "scene": "scene-0757",
+      "num_frames": 5,
+      "gt_total": 57,
+      "fn": 14,
+      "fp": 4,
+      "idsw": 0,
+      "motp": 0.2599327020979666,
+      "match_count": 43,
+      "n_unique_gt": 12,
+      "n_unique_pred": 10
+    },
+    {
+      "scene": "scene-0796",
+      "num_frames": 5,
+      "gt_total": 110,
+      "fn": 47,
+      "fp": 8,
+      "idsw": 19,
+      "motp": 0.11285245707609318,
+      "match_count": 63,
+      "n_unique_gt": 30,
+      "n_unique_pred": 36
+    },
+    {
+      "scene": "scene-0916",
+      "num_frames": 5,
+      "gt_total": 243,
+      "fn": 166,
+      "fp": 12,
+      "idsw": 11,
+      "motp": 0.44336773988493683,
+      "match_count": 77,
+      "n_unique_gt": 58,
+      "n_unique_pred": 25
+    },
+    {
+      "scene": "scene-1077",
+      "num_frames": 5,
+      "gt_total": 86,
+      "fn": 31,
+      "fp": 7,
+      "idsw": 22,
+      "motp": 0.22739466185687493,
+      "match_count": 55,
+      "n_unique_gt": 23,
+      "n_unique_pred": 32
+    },
+    {
+      "scene": "scene-1094",
+      "num_frames": 5,
+      "gt_total": 276,
+      "fn": 165,
+      "fp": 1,
+      "idsw": 0,
+      "motp": 0.4336061783622254,
+      "match_count": 111,
+      "n_unique_gt": 60,
+      "n_unique_pred": 24
+    },
+    {
+      "scene": "scene-1100",
+      "num_frames": 5,
+      "gt_total": 122,
+      "fn": 73,
+      "fp": 8,
+      "idsw": 0,
+      "motp": 0.2666165359012431,
+      "match_count": 49,
+      "n_unique_gt": 25,
+      "n_unique_pred": 13
+    }
+  ],
+  "aggregate": {
+    "total_gt": 1920,
+    "total_fn": 1116,
+    "total_fp": 76,
+    "total_idsw": 115,
+    "MOTA": 0.3192708333333333,
+    "MOTP_m": 0.3542104744606725,
+    "scenes": 10
+  },
+  "elapsed_s": 0.20862388610839844
+}

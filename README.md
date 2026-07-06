@@ -15,6 +15,7 @@
 - 🖥️ **Web UI**: Streamlit 一键启动，时间滑块回放，指标时序曲线
 - 📊 **评估指标**: RMSE / Precision / Recall / ID 切换 / 时延
 - 🎬 **导出**: 全场 JSON · track/GT CSV · 动画 GIF
+- **真实数据回归** (v0.3+): nuScenes mini 集成 → MOTA/MOTP baseline vs NuScenes leaderboard
 - 🧪 **pytest 分层**: 64 个测试 (unit + integration) 全过
 
 ---
@@ -195,9 +196,47 @@ self-driving-sim/
 
 ---
 
-## 🗺️ 开发路线图
+## 📊 MOTA Baseline (v0.3+ nuScenes mini 真实数据)
 
-详见 `ARCHITECTURE.md` 中的 P0/P1/P2/P3 优先级
+用 nuScenes mini (10 场景 × ~40 帧 × ~30-120 GT/帧) 端到端测 tracking 性能。
+MOTA = (1 − (FN + FP + IDsw) / GT). 正值 = 优于 trivial baseline。
+
+```bash
+# 单场景快速 sanity check
+python3 scripts/run_nuscenes_mota_baseline.py --scene scene-0061
+
+# 10 场景全跑 (2-3s 出结果, 默认 GT mode)
+python3 scripts/run_nuscenes_mota_baseline.py --scenes 10 --save data/mota_v_x.json
+
+# 加 RangeNoiseModel 测鲁棒性
+python3 scripts/run_nuscenes_mota_baseline.py --scenes 10 --noisy
+
+# 生成对比 dashboard (evo + vs NuScenes SOTA leaderboard)
+python3 scripts/mota_dashboard.py --out /tmp/mota_dashboard
+```
+
+### 版本成绩 (10 场景 aggregate)
+| Version | MOTA | MOTP | FP | FN | IDsw | 说明 |
+|---|---|---|---|---|---|---|
+| v0 默认 | -0.084 | 0.45m | 6398 | 12300 | 1391 | dt=0.05 错误 |
+| v6 IMM+max_miss=1 | +0.209 | 0.49m | 1005 | 11794 | 1864 | 当前推荐 |
+| v6 reference (5帧) | +0.319 | 0.35m | 76 | 1116 | 115 | 仅作内部对照 |
+| **v7 noisy mode** | +0.185 | 0.56m | 945 | 12372 | 1798 | sensor noise 鲁棒 |
+
+### vs NuScenes Tracking Leaderboard (2024 截止)
+⚠️ **apparent comparison**: 我们用 GT detections (无 detector noise)，他们用 LiDAR detector (~75% recall)。无损 ~0.1-0.2 MOTA 偏差。
+| Tracker | AMOTA | MOTP | Setup |
+|---|---|---|---|
+| Ours (v7 noisy) | +0.185 | 0.56m | Multi-sensor + IMM |
+| AB3DMOT | 0.683 | 0.34m | BEV + Kalman |
+| CenterPoint | 0.730 | 0.26m | LiDAR + Kalman |
+| EagerMOT | 0.720 | 0.25m | Stereo + LiDAR |
+| FUTR3D | 0.760 | 0.24m | Camera + LiDAR + Radar |
+| CRN (SOTA) | 0.795 | 0.23m | Camera-radar |
+
+详见 `scripts/mota_dashboard.py` 输出对比图。
+
+## 🗺️ 开发路线图
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|

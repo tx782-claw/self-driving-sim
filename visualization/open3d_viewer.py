@@ -76,37 +76,78 @@ def build_coordinate_frame(size: float = 2.0):
 # ============================================================
 # 3D 场景渲染 - 自动选择最佳后端
 # ============================================================
-def render_frame(ego_pos, ground_truth, tracks, lidar_points=None, title="Frame", out_path=None):
+def render_frame(ego_pos, ground_truth, tracks, lidar_points=None, title="Frame", out_path=None,
+                 data_in_ego_centric=False):
     """
     统一接口: 返回 figure 对象或保存到文件
     优先 Plotly → Matplotlib
+
+    Args:
+        data_in_ego_centric: True=ground_truth/tracks/lidar_points 已是 ego-centric 坐标系
+                             (nuScenes adapter 模式), 不再做 ego_pos 减法
     """
     if _HAS_PLOTLY:
-        return _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out_path)
+        return _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out_path,
+                                    data_in_ego_centric=data_in_ego_centric)
     elif _HAS_MPL:
-        return _render_frame_mpl(ego_pos, ground_truth, tracks, lidar_points, title, out_path)
+        return _render_frame_mpl(ego_pos, ground_truth, tracks, lidar_points, title, out_path,
+                                 data_in_ego_centric=data_in_ego_centric)
     else:
         raise RuntimeError("No plotting library available (need plotly or matplotlib)")
 
 
-def _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out_path, ego_centered=True):
-    """Plotly 3D 渲染 (默认自车中心)"""
+def _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out_path,
+                         ego_centered=True, data_in_ego_centric=False):
+    """Plotly 3D 渲染 (默认自车中心)
+
+    Args:
+        ego_centered: True=视图中心平移到自车
+        data_in_ego_centric: True=数据已是 ego-centric (nuScenes), 不减 ego_pos
+    """
     import plotly.graph_objects as go
     fig = go.Figure()
 
     if ego_centered:
-        # 自车坐标系变换
-        ego_render = np.array([0.0, 0.0, 0.0])
-        gt_render = [g.position - ego_pos for g in ground_truth]
-        trk_render = [t.position - ego_pos for t in tracks]
+        if data_in_ego_centric:
+            # nuScenes adapter 模式: 数据已是 ego-centric, 不做转换
+            ego_render = np.array([0.0, 0.0, 0.0])
+            gt_render = [g.position for g in ground_truth]
+            trk_render = [t.position for t in tracks]
+        else:
+            # 仿真模式: global 坐标系, 转 ego-centric
+            ego_render = np.array([0.0, 0.0, 0.0])
+            gt_render = [g.position - ego_pos for g in ground_truth]
+            trk_render = [t.position - ego_pos for t in tracks]
+            if lidar_points is not None and len(lidar_points) > 0:
+                lidar_points = np.array([p - ego_pos for p in lidar_points])
+        # 自适应 view range: 根据 GT/tracks/lidar 实际数据范围确定
+        # 最小 buffer 保证场景小的时候不会太空
+        all_pts = []
+        for g in gt_render:
+            all_pts.append(g)
+        for t in trk_render:
+            all_pts.append(t)
         if lidar_points is not None and len(lidar_points) > 0:
-            lidar_points = np.array([p - ego_pos for p in lidar_points])
-        view_range = (-80, 100)
+            for p in lidar_points[:1000]:  # 采样避免慢
+                all_pts.append(p)
+        if all_pts:
+            arr = np.array(all_pts)
+            # 前方多看一些 (自动驾驶语义: 前重视), 后方少看
+            x_fwd = max(50.0, float(arr[:, 0].max()) + 15.0)
+            x_back = max(30.0, float(-arr[:, 0].min()) + 10.0)
+            y_max_abs = max(30.0, float(np.abs(arr[:, 1]).max()) + 10.0)
+            y_max = max(y_max_abs, float(arr[:, 1].max()) + 5.0)
+            y_min = min(-y_max_abs, float(arr[:, 1].min()) - 5.0)
+            view_range = (-x_back, x_fwd)
+        else:
+            view_range = (-30, 100)
+            y_min, y_max = -50, 50
     else:
         ego_render = ego_pos
         gt_render = [g.position for g in ground_truth]
         trk_render = [t.position for t in tracks]
         view_range = None
+        y_min, y_max = -50, 50
 
     fig.add_trace(go.Scatter3d(
         x=[ego_render[0]], y=[ego_render[1]], z=[ego_render[2]],
@@ -154,7 +195,7 @@ def _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out
             lidar_points = lidar_points[idx]
         fig.add_trace(go.Scatter3d(
             x=lidar_points[:, 0], y=lidar_points[:, 1], z=lidar_points[:, 2],
-            mode='markers', marker=dict(size=1.5, color='lightgray', opacity=0.5),
+            mode='markers', marker=dict(size=3, color='lightgray', opacity=0.5),
             name='LiDAR', hoverinfo='skip', showlegend=False
         ))
 
@@ -167,13 +208,13 @@ def _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out
     )
     if view_range is not None:
         scene_dict['xaxis_range'] = [view_range[0], view_range[1]]
-        scene_dict['yaxis_range'] = [-30, 30]
+        scene_dict['yaxis_range'] = [y_min, y_max]
         scene_dict['zaxis_range'] = [-2, 8]
 
     fig.update_layout(
         title=title,
         scene=scene_dict,
-        height=600, margin=dict(l=0, r=0, t=40, b=0),
+        height=720, margin=dict(l=0, r=0, t=40, b=0),
     )
     if out_path:
         if out_path.endswith('.html'):
@@ -183,16 +224,26 @@ def _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, out
     return fig
 
 
-def _render_frame_mpl(ego_pos, ground_truth, tracks, lidar_points, title, out_path, ego_centered=True):
-    """Matplotlib 3D 渲染（fallback，默认自车中心）"""
+def _render_frame_mpl(ego_pos, ground_truth, tracks, lidar_points, title, out_path,
+                     ego_centered=True, data_in_ego_centric=False):
+    """Matplotlib 3D 渲染（fallback，默认自车中心）
+
+    Args:
+        data_in_ego_centric: True=数据已是 ego-centric, 不减 ego_pos
+    """
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection='3d')
     if ego_centered:
-        ego_render = np.array([0.0, 0.0, 0.0])
-        gt_render = [g.position - ego_pos for g in ground_truth]
-        trk_render = [t.position - ego_pos for t in tracks]
-        if lidar_points is not None and len(lidar_points) > 0:
-            lidar_points = np.array([p - ego_pos for p in lidar_points])
+        if data_in_ego_centric:
+            ego_render = np.array([0.0, 0.0, 0.0])
+            gt_render = [g.position for g in ground_truth]
+            trk_render = [t.position for t in tracks]
+        else:
+            ego_render = np.array([0.0, 0.0, 0.0])
+            gt_render = [g.position - ego_pos for g in ground_truth]
+            trk_render = [t.position - ego_pos for t in tracks]
+            if lidar_points is not None and len(lidar_points) > 0:
+                lidar_points = np.array([p - ego_pos for p in lidar_points])
     else:
         ego_render = ego_pos
         gt_render = [g.position for g in ground_truth]
@@ -241,20 +292,37 @@ def _render_frame_mpl(ego_pos, ground_truth, tracks, lidar_points, title, out_pa
 # ============================================================
 # 2D 俯视图
 # ============================================================
-def render_topdown(ego_pos, ground_truth, tracks, range_m=80.0, out_path=None, title='Top-Down View'):
-    """统一接口"""
+def render_topdown(ego_pos, ground_truth, tracks, range_m=80.0, out_path=None, title='Top-Down View',
+                   data_in_ego_centric=False):
+    """统一接口
+
+    Args:
+        data_in_ego_centric: True=数据已是 ego-centric, 不减 ego_pos
+    """
     if _HAS_PLOTLY:
-        return _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, out_path, title)
+        return _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, out_path, title,
+                                      data_in_ego_centric=data_in_ego_centric)
     elif _HAS_MPL:
-        return _render_topdown_mpl(ego_pos, ground_truth, tracks, range_m, out_path, title)
+        return _render_topdown_mpl(ego_pos, ground_truth, tracks, range_m, out_path, title,
+                                   data_in_ego_centric=data_in_ego_centric)
     else:
         raise RuntimeError("No plotting library")
 
 
-def _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, out_path, title):
+def _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, out_path, title,
+                           data_in_ego_centric=False):
+    """Plotly 2D 俯视图
+
+    Args:
+        data_in_ego_centric: True=数据已是 ego-centric, 不减 ego_pos
+    """
     import plotly.graph_objects as go
     fig = go.Figure()
-    cx, cy = ego_pos[0], ego_pos[1]
+    if data_in_ego_centric:
+        # 数据已是 ego-centric, 自车在原点
+        cx, cy = 0.0, 0.0
+    else:
+        cx, cy = ego_pos[0], ego_pos[1]
     # 自车
     fig.add_trace(go.Scatter(x=[0], y=[0],
         mode='markers+text',
@@ -307,10 +375,19 @@ def _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, out_path, tit
     return fig
 
 
-def _render_topdown_mpl(ego_pos, ground_truth, tracks, range_m, out_path, title):
+def _render_topdown_mpl(ego_pos, ground_truth, tracks, range_m, out_path, title,
+                       data_in_ego_centric=False):
+    """Matplotlib 2D 俯视图
+
+    Args:
+        data_in_ego_centric: True=数据已是 ego-centric, 不减 ego_pos
+    """
     fig, ax = plt.subplots(figsize=(10, 7))
     # 计算自车中心坐标
-    cx, cy = ego_pos[0], ego_pos[1]
+    if data_in_ego_centric:
+        cx, cy = 0.0, 0.0
+    else:
+        cx, cy = ego_pos[0], ego_pos[1]
     ax.scatter([0], [0], c='cyan', s=300, marker='D', label='Ego', zorder=10,
                edgecolors='blue', linewidth=2)
     ax.annotate('EGO', (0, 0), textcoords='offset points', xytext=(0, 12),
@@ -355,9 +432,13 @@ def _render_topdown_mpl(ego_pos, ground_truth, tracks, range_m, out_path, title)
 
 
 # 兼容旧 API
-def render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points=None, title="Frame"):
-    return _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, None)
+def render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points=None, title="Frame",
+                        data_in_ego_centric=False):
+    return _render_frame_plotly(ego_pos, ground_truth, tracks, lidar_points, title, None,
+                                data_in_ego_centric=data_in_ego_centric)
 
 
-def render_topdown_plotly(ego_pos, ground_truth, tracks, range_m=80.0):
-    return _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, None, "Top-Down View")
+def render_topdown_plotly(ego_pos, ground_truth, tracks, range_m=80.0,
+                          data_in_ego_centric=False):
+    return _render_topdown_plotly(ego_pos, ground_truth, tracks, range_m, None, "Top-Down View",
+                                  data_in_ego_centric=data_in_ego_centric)
