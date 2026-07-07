@@ -18,6 +18,7 @@ from .imm import IMMTrack
 from .association import hungarian_associate
 from .jpda import auto_jpda
 from .imu_predict import IMUEgoPredictor, extract_imu_from_sensors
+from .gnns import gnns_associate
 
 
 class MultiObjectTracker:
@@ -34,7 +35,8 @@ class MultiObjectTracker:
                  revive_distance_m: float = 8.0,
                  graveyard_max_size: int = 100,
                  # ===== P2 关联/滤波模式 =====
-                 association_mode: str = 'hungarian',  # 'jpda' | 'hungarian' (默认 hungarian，密集场景下更稳定)
+                 association_mode: str = 'hungarian',  # 'gnns' | 'jpda' | 'hungarian' (默认 hungarian，密集场景下更稳定)
+                 # P3-B 新增 'gnns' - Mahalanobis + chi2 门限 + 匈牙利
                  use_ukf: bool = False,            # True=UKFTrack，False=EKFTrack
                  use_imm: bool = False,            # True=IMMTrack (CV+CA) - v0.2.2 新增，优先级高于 use_ukf
                  JPDA_PD: float = 0.9,            # 检测概率
@@ -43,6 +45,9 @@ class MultiObjectTracker:
                  # ===== P3-A 自车运动补偿 (v0.4) =====
                  use_ego_motion: bool = True,    # True=从 sensor_detections 提取 IMU 计算 ego_motion
                  imu_predictor: IMUEgoPredictor = None,  # 外部传入可复用,None 时内部创建
+                 # ===== P3-B GNNS 关联参数 =====
+                 gnns_gate_chi2: float = 7.815,   # GNNS chi2 门限 (3D 95% 分位)
+                 gnns_allow_n_to_1: bool = True, # GNNS N-to-1 允许多传感器同时更新同一 track
                  ):
         self.dt = dt
         self.gate_threshold = gate_threshold
@@ -57,7 +62,7 @@ class MultiObjectTracker:
         self.revive_distance_m = revive_distance_m
 
         # P2: 关联 + 滤波模式
-        self.association_mode = association_mode  # 'jpda' | 'hungarian'
+        self.association_mode = association_mode  # 'gnns' | 'jpda' | 'hungarian'
         self.use_ukf = use_ukf                    # True=UKFTrack, False=EKFTrack
         self.use_imm = use_imm                    # True=IMMTrack, 优先于 use_ukf
         self.JPDA_PD = JPDA_PD
@@ -68,6 +73,10 @@ class MultiObjectTracker:
         # P3-A: 自车运动补偿
         self.use_ego_motion = use_ego_motion
         self._imu_predictor = imu_predictor if imu_predictor is not None else IMUEgoPredictor(dt=dt)
+
+        # P3-B: GNNS 关联参数
+        self.gnns_gate_chi2 = gnns_gate_chi2
+        self.gnns_allow_n_to_1 = gnns_allow_n_to_1
 
         # Track 列表
         self.confirmed_tracks: list = []
@@ -168,12 +177,22 @@ class MultiObjectTracker:
                 tracks_for_assoc[trk_idx].miss(timestamp)
 
         else:
-            # ── 匈牙利模式 ───────────────────────────────────────
-            matched, unmatched_dets, unmatched_trks = hungarian_associate(
-                all_dets, tracks_for_assoc,
-                gate_threshold=self.gate_threshold,
-                confidence_weighted=self.use_confidence_weighted,
-                debug=False, greedy_multi=True)
+            # ── 匈牙利模式 / GNNS 模式 ──────────────────────────
+            if self.association_mode == 'gnns':
+                # P3-B: GNNS 关联 (Mahalanobis + chi2 + 贪心)
+                matched, unmatched_dets, unmatched_trks = gnns_associate(
+                    all_dets, tracks_for_assoc,
+                    gate_chi2=self.gnns_gate_chi2,
+                    confidence_weighted=self.use_confidence_weighted,
+                    allow_n_to_1=self.gnns_allow_n_to_1,
+                    debug=False)
+            else:
+                # 标准匈牙利 (P0-P2 默认)
+                matched, unmatched_dets, unmatched_trks = hungarian_associate(
+                    all_dets, tracks_for_assoc,
+                    gate_threshold=self.gate_threshold,
+                    confidence_weighted=self.use_confidence_weighted,
+                    debug=False, greedy_multi=True)
 
             for det_idx, trk_idx in matched:
                 det = all_dets[det_idx]
