@@ -40,6 +40,7 @@ class MultiObjectTracker:
                  # P3-B 新增 'gnns' - Mahalanobis + chi2 门限 + 匈牙利
                  use_ukf: bool = False,            # True=UKFTrack，False=EKFTrack
                  use_imm: bool = False,            # True=IMMTrack (CV+CA) - v0.2.2 新增，优先级高于 use_ukf
+                 imm_n_models: int = 2,           # P3-C: IMM 模型数 (2=CV+CA, 3=CV+CA+CTRV)
                  # ===== P3-D IEKF 升级 (v0.4) =====
                  use_iekf: bool = False,           # True=IEKFTrack (迭代 EKF) - 优先级 use_imm > use_iekf > use_ukf
                  iekf_max_iter: int = DEFAULT_MAX_ITER,
@@ -70,6 +71,7 @@ class MultiObjectTracker:
         self.association_mode = association_mode  # 'gnns' | 'jpda' | 'hungarian'
         self.use_ukf = use_ukf                    # True=UKFTrack, False=EKFTrack
         self.use_imm = use_imm                    # True=IMMTrack, 优先于 use_ukf
+        self.imm_n_models = imm_n_models          # P3-C: 2 或 3
         self.use_iekf = use_iekf                  # P3-D: True=IEKFTrack, 优先于 use_ukf
         self.iekf_max_iter = iekf_max_iter
         self.iekf_tol = iekf_tol
@@ -321,6 +323,7 @@ class MultiObjectTracker:
                 dt=self.dt,
                 timestamp=timestamp,
                 process_noise_vel=process_noise,
+                n_models=self.imm_n_models,  # P3-C
             )
         elif self.use_iekf:
             # P3-D: IEKFTrack

@@ -1,5 +1,5 @@
 """Core 仿真核心"""
-__version__ = "0.2.2"
+__version__ = "0.4.0"
 
 from .clock import SimClock
 from .simulator import Simulator

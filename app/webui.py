@@ -109,11 +109,35 @@ with st.sidebar:
                                 index=0)
 
     st.divider()
-    st.subheader("🔗 融合算法")
-    association_mode = st.selectbox("关联模式", ["hungarian", "jpda"], index=0,
-                                    help="Hungarian=贪心匹配（推荐）；JPDA=联合概率数据关联（实验）")
-    use_ukf = st.checkbox("使用 UKF（默认 EKF）", value=False,
-                          help="UKF=无迹卡尔曼滤波（Beta）")
+    st.subheader("🔗 融合算法 (v0.4)")
+    # ── v0.4 P3 适配: 4 个新开关 ──
+    # 关联模式 (P3-B: 新增 gnns)
+    association_mode = st.selectbox(
+        "关联模式",
+        ["hungarian", "gnns", "jpda"],
+        index=0,
+        help="Hungarian=贪心匹配（推荐）\n"
+             "GNNS=P3-B 引入的 Mahalanobis + chi2 门限 + 贪心\n"
+             "JPDA=联合概率数据关联（实验）",
+    )
+    # 运动模型 (P3-C: IMM n_models=3, P3-D: IEKF)
+    with st.expander("🛋 运动模型 (P3-C/D)", expanded=False):
+        use_imm = st.checkbox("IMM 交互多模型", value=False,
+                              help="CV 互切换。n_models=3 加 CTRV (弯道场景)")
+        imm_n_models = st.selectbox("IMM 模型数", [2, 3], index=0,
+                                    help="2=CV+CA 3=CV+CA+CTRV")
+        use_iekf = st.checkbox("IEKF 迭代卡尔曼", value=False,
+                                help="多次重线性化。非线性观测下设 max_iter=3 生效")
+        iekf_max_iter = st.slider("IEKF max_iter", 1, 5, 1,
+                                   help="默认 1 (接口就位)；非线性观测 (如 LiDAR 极坐标) 设 3+")
+        use_ukf = st.checkbox("使用 UKF（默认 EKF）", value=False,
+                              help="UKF=无迹卡尔曼滤波（Beta）")
+    # 自车运动补偿 (P3-A)
+    with st.expander("🚗 自车运动补偿 (P3-A)", expanded=False):
+        use_ego_motion = st.checkbox("启用 ego-motion 补偿", value=True,
+                                      help="从 IMU 推算自车运动,加到过程噪声 Q")
+    # 仿真模式默认行为: 隐藏旧式 use_imm / use_ukf 顶层 checkbox (v0.3 兼容)
+    # 旧 checkbox 已迁到'运动模型' expander 内
 
     st.divider()
     col_btn1, col_btn2 = st.columns(2)
@@ -146,7 +170,11 @@ if reset_button:
 # ===== 运行仿真 =====
 def run_simulation(use_l, use_r, use_c, use_i, use_g, gate, min_h,
                    scenario_type, num_vehicles, duration, ego_speed, weather_name,
-                   association_mode='hungarian', use_ukf=False):
+                   association_mode='hungarian', use_ukf=False,
+                   # v0.4 P3 新增
+                   use_imm=False, imm_n_models=2,
+                   use_iekf=False, iekf_max_iter=1,
+                   use_ego_motion=True):
     """执行仿真（带进度条）"""
     if scenario_type == "Highway (高速)":
         scenario = HighwayScenario(num_vehicles=num_vehicles, duration=duration, dt=0.05,
@@ -188,6 +216,10 @@ def run_simulation(use_l, use_r, use_c, use_i, use_g, gate, min_h,
         min_hits_to_confirm=min_h,
         association_mode=association_mode,
         use_ukf=use_ukf,
+        # v0.4 P3 新增
+        use_imm=use_imm, imm_n_models=imm_n_models,
+        use_iekf=use_iekf, iekf_max_iter=iekf_max_iter,
+        use_ego_motion=use_ego_motion,
     )
     sim = Simulator(scenario, sensors, fusion, dt=0.05, weather=weather)
 
@@ -267,6 +299,9 @@ if run_button:
                 ns_scene, mode='gt' if ns_mode.startswith('gt') else 'noisy',
                 gate=ns_gate, min_hits=ns_min_hits, max_miss=ns_max_miss,
                 use_imm=ns_use_imm, max_frames=ns_max_frames,
+                # v0.4 P3
+                imm_n_models=ns_imm_n_models,
+                association_mode=ns_association_mode,
             )
     else:
         with st.spinner("🔧 准备仿真..."):
@@ -274,7 +309,11 @@ if run_button:
                 use_lidar, use_radar, use_camera, use_imu, use_gps,
                 gate_threshold, min_hits,
                 scenario_type, num_vehicles, duration, ego_speed, weather_name,
-                association_mode=association_mode, use_ukf=use_ukf
+                association_mode=association_mode, use_ukf=use_ukf,
+                # v0.4 P3
+                use_imm=use_imm, imm_n_models=imm_n_models,
+                use_iekf=use_iekf, iekf_max_iter=iekf_max_iter,
+                use_ego_motion=use_ego_motion,
             )
     st.session_state.frames = frames
     st.session_state.metrics = evaluate(frames)

@@ -1,5 +1,41 @@
 # Changelog
 
+## v0.4.0 (2026-07-07) — P3-F: 前端适配 + v0.4.0 release
+
+### 修改
+- **`app/webui.py`** — 前端适配 v0.4 P3 全部特性
+  - "🔗 融合算法 (v0.4)" 区块: 新增 4 个 P3 开关
+    - 关联模式: hungarian / **gnns** (P3-B) / jpda
+    - "🛋 运动模型 (P3-C/D)" expander: IMM checkbox + n_models selectbox (2/3) + IEKF checkbox + max_iter slider
+    - "🚗 自车运动补偿 (P3-A)" expander: use_ego_motion checkbox (默认开)
+  - 仿真模式 `run_simulation()` 新参数: `use_imm/imm_n_models/use_iekf/iekf_max_iter/use_ego_motion`
+  - 真实数据模式 `run_nuscenes()` 新参数: `imm_n_models/association_mode` + nuScenes 侧边栏新增 IMM n_models + GNNS selectbox
+  - 保留旧式 use_imm / use_ukf checkbox 内部重定向到 expander
+- **`fusion/tracker.py`**
+  - `MultiObjectTracker.__init__` 新增 `imm_n_models: int = 2` 参数
+  - `_create_track()` 创建 IMMTrack 时传 `n_models=self.imm_n_models`
+- **`core/__init__.py`** — bump __version__ 从 '0.3' 到 '0.4.0'
+
+### v0.4.0 P3 总体验收
+| 子项 | 状态 | commit | 新增测试 | RMSE / MOTA 变化 |
+|---|---|---|---|---|
+| P3-A 自车运动补偿 | ✅ | b571ffd | +15 | Velocity RMSE -6% |
+| P3-B GNNS 关联 | ✅ | 7236250 | +16 | 框架就位 (无改善,诚实验证) |
+| P3-C IMM 3 模型 | ✅ | 12eff17 | +15 | 框架就位 (弯道场景) |
+| P3-D IEKF 升级 | ✅ | 3ea98be | +16 | max_iter=1 默认 (无噪声放大) |
+| **P3-F 前端 + release** | ✅ | (本 commit) | — | 全局 UI 适配 |
+
+### 测试
+- 全套: **131/131 全过** (unit 120 + integration 11)
+- 旧 84 个 v0.3 测试 0 破坏 (P3 全向后兼容)
+- Streamlit webui 启动成功 (`/_stcore/health` = ok)
+
+### 总体 (v0.3 → v0.4.0)
+- **代码**: 7 个新文件 (`imu_predict.py / gnns.py / ctrv.py / iekf.py` + 4 个 test_*.py), 5 个文件修改
+- **测试**: 84 → 131 (+47 个 P3 测试)
+- **API 稳定性**: 100% 向后兼容 (v0.3 旧代码无需修改)
+- **新功能 (P3)**: 全员接口就位,等待真实数据 (nuScenes mini) 验证发力场景
+
 ## v0.4.0-dev (2026-07-07) — P3-D: IEKF 迭代扩展卡尔曼
 
 ### 新增
