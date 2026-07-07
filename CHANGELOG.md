@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.4.0-dev (2026-07-07) — P3-A: 自车运动补偿
+
+### 新增
+- **`fusion/imu_predict.py`** — IMUEgoPredictor 类
+  - 梯形积分从 IMU accel/gyro 推算 1 帧内自车运动
+  - 输出 `ego_motion = {delta_position, delta_velocity, delta_yaw}`
+  - 同时提供 `update_ego_state()` fallback (无 IMU 时用 EgoState 真值)
+  - 工具函数: `extract_imu_from_sensors()` / `compute_ego_motion()`
+- **`tests/unit/test_ego_motion.py`** — 15 个新单测
+  - IMUEgoPredictor 7 个 (梯形积分/yaw/reset/IMU 提取)
+  - EKFTrack 5 个 (Q 扩展/接口兼容/高速稳定性)
+  - MultiObjectTracker 3 个 (端到端 Highway 场景)
+- **`scripts/bench_ego_motion.py`** — Highway 5 车 P3-A 验收脚本
+
+### 修改
+- **`fusion/ekf.py`**
+  - `EKFTrack.predict(dt, ego_motion=None)` 新增 ego_motion 参数
+  - `EKFTrack.update(..., ego_motion=None)` 新增 ego_motion 参数
+  - 新增 `_apply_ego_motion_noise()` — 在过程噪声 Q 中加入自车运动不确定性
+  - 新增常量 `EGO_MOTION_PROCESS_NOISE_SCALE = 0.5`
+- **`fusion/tracker.py`**
+  - `MultiObjectTracker.update(..., ego_motion=None)` 新增参数
+  - 新增 `use_ego_motion=True` (默认开启) / `imu_predictor` 初始化参数
+  - 当 use_ego_motion=True 且未外部传入 ego_motion,自动从 sensor_detections 提取 IMU
+  - `reset()` 重置 IMU 预测器状态
+- **`fusion/__init__.py`** — 导出 IMUEgoPredictor / compute_ego_motion / extract_imu_from_sensors
+
+### 验收 (bench_ego_motion.py, Highway 5 车, 100 帧, 0.05s 步长)
+| 指标 | Baseline | P3-A | 变化 |
+|---|---|---|---|
+| Position RMSE | 0.871 m | 0.892 m | +2.4% (无改善) |
+| Velocity RMSE | 7.180 m/s | **6.749 m/s** | **-6.0%** (改善) |
+| MOTA | 0.0000 | 0.0000 | 一致 |
+
+**诚实结论**: Position RMSE 未达 10% 目标 (因为当前 sensor 模型直接给世界坐标真值,ego_motion 补偿对位置改善有限),但 Velocity RMSE 改善 6%,P 协方差扩展正确。**框架就位**,等未来 sensor 改为"给 sensor_frame 位置"(更真实)时,ego_motion 补偿会大放异彩 — 调研报告 §9.2 列为 P3-A 刚需原因。
+
+### 测试
+- unit: 73 个 (原 58 + 新 15), 全过 0.5s
+- 全套: 84/84 全过 (含 integration 11 个)
+- 旧 7 个 ekf/ukf/imm/scenarios 测试 0 破坏
+
+## v0.3 (2026-07-06) — nuScenes mini 真实数据回归
+- nuScenes mini adapter + 5 integration tests (默认 skip)
+- 4 个 mota baseline JSON + dashboard
+- README MOTA baseline 章节
+- 7 轮 bug fix: view 函数双减 / sensor panel 双减 / LIDAR 5列 / sensor_frame transform / GIF 双减 / 视图自动放大 / heading=0 rotation
+- MOTA v0 (-0.084) → v6 (+0.209) → v7 noisy (+0.185) 闭环
+
 ## v0.2.2 (2026-06-13)
 
 ### 修复

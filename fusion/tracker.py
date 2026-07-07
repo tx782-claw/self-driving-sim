@@ -7,6 +7,7 @@
 - JPDA 关联模式（联合概率数据关联） - 实验功能
 - UKF 滤波模式（无迹卡尔曼，可选）
 - IMM 滤波模式（CV+CA 交互多模型，可选） - v0.2.2 新增
+- P3-A 自车运动补偿 (v0.4 新增) - 接受 ego_motion 参数,补偿 IMU 不确定性到过程噪声
 """
 import numpy as np
 from collections import deque
@@ -16,6 +17,7 @@ from .ukf import UKFTrack
 from .imm import IMMTrack
 from .association import hungarian_associate
 from .jpda import auto_jpda
+from .imu_predict import IMUEgoPredictor, extract_imu_from_sensors
 
 
 class MultiObjectTracker:
@@ -38,6 +40,9 @@ class MultiObjectTracker:
                  JPDA_PD: float = 0.9,            # 检测概率
                  JPDA_clut_density: float = 1e-5,  # 杂波密度
                  JPDA_max_miss: int = 10,        # JPDA 模式专用：幽灵 track 死亡阈值（比 Hungarian 更激进）
+                 # ===== P3-A 自车运动补偿 (v0.4) =====
+                 use_ego_motion: bool = True,    # True=从 sensor_detections 提取 IMU 计算 ego_motion
+                 imu_predictor: IMUEgoPredictor = None,  # 外部传入可复用,None 时内部创建
                  ):
         self.dt = dt
         self.gate_threshold = gate_threshold
@@ -60,6 +65,10 @@ class MultiObjectTracker:
         # v0.2.2: JPDA 模式幽灵 track 死亡更激进 (15 vs 30)，减少 clutter 拖尾
         self._jpda_max_miss = JPDA_max_miss if association_mode == 'jpda' else max_miss_streak
 
+        # P3-A: 自车运动补偿
+        self.use_ego_motion = use_ego_motion
+        self._imu_predictor = imu_predictor if imu_predictor is not None else IMUEgoPredictor(dt=dt)
+
         # Track 列表
         self.confirmed_tracks: list = []
         self.candidate_tracks: list = []
@@ -75,15 +84,36 @@ class MultiObjectTracker:
         self.next_id = 1
         self.last_t = None
         self.graveyard.clear()
+        # P3-A: 重置 IMU 预测器
+        if self._imu_predictor is not None:
+            self._imu_predictor.reset()
 
-    def update(self, sensor_detections: dict, timestamp: float) -> list:
-        """主更新接口"""
+    def update(self, sensor_detections: dict, timestamp: float, ego_motion: dict = None) -> list:
+        """
+        主更新接口
+
+        Args:
+            sensor_detections: {sensor_id: [Detection, ...]}
+            timestamp: 当前时间戳
+            ego_motion: 自车运动补偿 (P3-A 新增,可选)
+                - None: 内部从 sensor_detections 提取 IMU 自动计算
+                - dict: {'delta_position': ..., 'delta_velocity': ..., 'delta_yaw': ...}
+                - 也可调用 _zero_ego_motion() 关掉
+        """
         all_dets = []
         for sid, dets in sensor_detections.items():
             if sid.startswith(('imu', 'gps')):
                 continue
             for d in dets:
                 all_dets.append(d)
+
+        # P3-A: 计算 ego_motion (如果未外部传入且 use_ego_motion=True)
+        if ego_motion is None and self.use_ego_motion:
+            imu_det = extract_imu_from_sensors(sensor_detections)
+            if imu_det is not None:
+                ego_motion = self._imu_predictor.update(imu_det, dt=self.dt)
+            # else: ego_motion 保持 None,各 track predict 不用补偿
+        # 兼容旧调用: ego_motion=None 时不补偿
 
         tracks_for_assoc = self.all_tracks
 
@@ -112,9 +142,11 @@ class MultiObjectTracker:
                 # JPDA: 高 β update 加上有效 det_confidence
                 # 低 β update 会污染 track 速度估计（已采用 NN 限制防止严重问题）
                 effective_conf = det.confidence * beta
+                # P3-A: 传入 ego_motion 到 update
                 trk.update(det.position, det.sensor_id, timestamp,
                            det_confidence=effective_conf,
-                           class_label=det.attributes.get('class'))
+                           class_label=det.attributes.get('class'),
+                           ego_motion=ego_motion)
                 tracks_updated.add(trk_idx)
                 # 记录本 track 还看过的其他检测
                 for di2, _ in assoc_weights.get(trk_idx, []):
@@ -146,10 +178,12 @@ class MultiObjectTracker:
             for det_idx, trk_idx in matched:
                 det = all_dets[det_idx]
                 trk = tracks_for_assoc[trk_idx]
+                # P3-A: 传入 ego_motion 到 update
                 trk.update(
                     det.position, det.sensor_id, timestamp,
                     det_confidence=det.confidence,
-                    class_label=det.attributes.get('class'))
+                    class_label=det.attributes.get('class'),
+                    ego_motion=ego_motion)
 
             for trk_idx in unmatched_trks:
                 tracks_for_assoc[trk_idx].miss(timestamp)

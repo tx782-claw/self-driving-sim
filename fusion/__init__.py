@@ -5,6 +5,7 @@ from .imm import IMMTrack, make_imm_transition_matrix
 from .association import hungarian_associate
 from .jpda import jpda_associate, jpda_associate_enumeration, auto_jpda
 from .tracker import MultiObjectTracker
+from .imu_predict import IMUEgoPredictor, compute_ego_motion, extract_imu_from_sensors
 
 __all__ = [
     'EKFTrack', 'make_cv_ekf', 'make_ca_ekf',
@@ -13,4 +14,5 @@ __all__ = [
     'hungarian_associate',
     'jpda_associate', 'jpda_associate_enumeration', 'auto_jpda',
     'MultiObjectTracker',
+    'IMUEgoPredictor', 'compute_ego_motion', 'extract_imu_from_sensors',
 ]

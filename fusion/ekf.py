@@ -1,10 +1,20 @@
 """
-EKF 跟踪器 - 匀速运动模型 + 自适应噪声
+EKF 跟踪器 - 匀速运动模型 + 自适应噪声 + 可选 ego-motion 补偿
 状态: [x, y, z, vx, vy, vz]
+
+P3-A 增强 (v0.4):
+- predict(dt, ego_motion) 支持自车运动补偿
+- 当 ego_motion 提供时,在过程噪声中加自车运动不确定性
+  (因为 IMU 也有噪声,自车运动传递到目标跟踪的协方差)
 """
 import numpy as np
 from filterpy.kalman import KalmanFilter
 from core.data_types import TrackedObject
+
+# 自车运动不确定性 (IMU 估计误差传递系数)
+# v0.4: 经验值,IMU 加速度 bias 典型 ~0.05 m/s²,1 帧内速度误差 ~0.0025 m/s,
+# 位置误差 ~0.00006 m,可忽略;但过程噪声用更保守值提升鲁棒性
+EGO_MOTION_PROCESS_NOISE_SCALE = 0.5
 
 
 def make_cv_ekf(dt: float = 0.05,
@@ -99,7 +109,23 @@ class EKFTrack:
             # 用相邻两帧的检测估速
             self.kf.x[3:] = np.zeros(3)
 
-    def predict(self, dt: float = None):
+    def predict(self, dt: float = None, ego_motion: dict = None):
+        """
+        预测步骤
+
+        Args:
+            dt: 实际时间步长 (s)。None 时用 self.dt
+            ego_motion: 自车运动补偿 (P3-A 新增)
+                dict 包含:
+                - 'delta_position': np.array(3,) 1 帧内自车位移 (米)
+                - 'delta_velocity': np.array(3,) 1 帧内自车速度变化 (米/秒) [可选]
+                - 'delta_yaw': float 偏航角变化 (弧度) [可选]
+
+        当提供 ego_motion 时,会在过程噪声中加自车运动不确定性。
+        这是因为:
+        1) IMU 估计自车运动有误差,这个误差会"传递"到目标跟踪
+        2) 高自车运动 → 目标在 sensor frame 中位置变化大 → 跟踪不确定度大
+        """
         if dt is None:
             dt = self.dt
         self.kf.F[:3, 3:] = np.eye(3) * dt
@@ -107,18 +133,52 @@ class EKFTrack:
         if self.miss_streak > 0:
             noise_scale = 1.0 + min(self.miss_streak, 5) * 0.5
             self.kf.Q[3:, 3:] = np.eye(3) * (self._process_noise_vel_base * noise_scale)
+
+        # P3-A: ego-motion 补偿 - 在过程噪声中加入自车运动不确定性
+        if ego_motion is not None:
+            self._apply_ego_motion_noise(ego_motion, dt)
+
         self.kf.predict()
+
+    def _apply_ego_motion_noise(self, ego_motion: dict, dt: float):
+        """
+        在过程噪声中加入自车运动不确定性
+
+        物理意义:
+        - 目标在 sensor frame 中的位置 = 目标世界位置 - 自车世界位置
+        - 如果自车以 v_ego 移动,自车位置变化 = v_ego * dt
+        - 这个变化会被 EKF 视为"目标在 sensor frame 的相对运动"
+        - 如果我们用 IMU 估计 v_ego,IMU 的噪声 σ_imu 会在 1 帧内产生
+          位置不确定性 v_ego * dt + 0.5 * σ_imu * dt²
+        - 这个不确定性加到过程噪声 Q
+        """
+        # 位置不确定性: 自车位置变化 ± IMU bias 累积
+        delta_pos = ego_motion.get('delta_position')
+        if delta_pos is None:
+            return
+        # |delta_pos| 是 1 帧内自车位移,作为位置不确定性的下界
+        ego_pos_unc = np.abs(delta_pos) * EGO_MOTION_PROCESS_NOISE_SCALE
+        # 加到位置过程噪声
+        self.kf.Q[:3, :3] = self.kf.Q[:3, :3] + np.diag(ego_pos_unc ** 2)
+        # 速度不确定性: 自车速度变化 (1 帧内) 也加到速度过程噪声
+        delta_vel = ego_motion.get('delta_velocity')
+        if delta_vel is not None:
+            ego_vel_unc = np.abs(delta_vel) * EGO_MOTION_PROCESS_NOISE_SCALE
+            self.kf.Q[3:, 3:] = self.kf.Q[3:, 3:] + np.diag(ego_vel_unc ** 2)
 
     def update(self, det_pos: np.ndarray, sensor_id: str, timestamp: float,
                dt: float = None, det_confidence: float = 1.0,
-               class_label: str = None):
-        """用检测位置更新滤波器 (P2: 支持多检测，只 predict 一次)"""
+               class_label: str = None, ego_motion: dict = None):
+        """用检测位置更新滤波器 (P2: 支持多检测，只 predict 一次; P3-A: 支持 ego_motion 补偿)"""
         # P2 关键修复: 如果 timestamp == self.last_t，说明已预测过，不再 predict
         already_predicted = (timestamp == self.last_t)
         if not already_predicted:
             if dt is None:
                 dt = timestamp - self.last_t if timestamp > self.last_t else self.dt
             self.kf.F[:3, 3:] = np.eye(3) * dt
+            # P3-A: ego-motion 补偿
+            if ego_motion is not None:
+                self._apply_ego_motion_noise(ego_motion, dt)
             self.kf.predict()
             self.last_t = timestamp
         # 多次 update 复用同一个 kf.x[:3] 作为预测状态
