@@ -19,6 +19,7 @@ from .association import hungarian_associate
 from .jpda import auto_jpda
 from .imu_predict import IMUEgoPredictor, extract_imu_from_sensors
 from .gnns import gnns_associate
+from .iekf import IEKFTrack, make_iekf_from_ekf, DEFAULT_MAX_ITER, DEFAULT_TOL
 
 
 class MultiObjectTracker:
@@ -39,6 +40,10 @@ class MultiObjectTracker:
                  # P3-B 新增 'gnns' - Mahalanobis + chi2 门限 + 匈牙利
                  use_ukf: bool = False,            # True=UKFTrack，False=EKFTrack
                  use_imm: bool = False,            # True=IMMTrack (CV+CA) - v0.2.2 新增，优先级高于 use_ukf
+                 # ===== P3-D IEKF 升级 (v0.4) =====
+                 use_iekf: bool = False,           # True=IEKFTrack (迭代 EKF) - 优先级 use_imm > use_iekf > use_ukf
+                 iekf_max_iter: int = DEFAULT_MAX_ITER,
+                 iekf_tol: float = DEFAULT_TOL,
                  JPDA_PD: float = 0.9,            # 检测概率
                  JPDA_clut_density: float = 1e-5,  # 杂波密度
                  JPDA_max_miss: int = 10,        # JPDA 模式专用：幽灵 track 死亡阈值（比 Hungarian 更激进）
@@ -65,6 +70,9 @@ class MultiObjectTracker:
         self.association_mode = association_mode  # 'gnns' | 'jpda' | 'hungarian'
         self.use_ukf = use_ukf                    # True=UKFTrack, False=EKFTrack
         self.use_imm = use_imm                    # True=IMMTrack, 优先于 use_ukf
+        self.use_iekf = use_iekf                  # P3-D: True=IEKFTrack, 优先于 use_ukf
+        self.iekf_max_iter = iekf_max_iter
+        self.iekf_tol = iekf_tol
         self.JPDA_PD = JPDA_PD
         self.JPDA_clut_density = JPDA_clut_density
         # v0.2.2: JPDA 模式幽灵 track 死亡更激进 (15 vs 30)，减少 clutter 拖尾
@@ -297,7 +305,8 @@ class MultiObjectTracker:
         return True
 
     def _create_track(self, det: Detection, timestamp: float):
-        """根据 use_imm / use_ukf 选 IMMTrack / UKFTrack / EKFTrack
+        """根据 use_imm / use_iekf / use_ukf 选 IMMTrack / IEKFTrack / UKFTrack / EKFTrack
+        优先级: use_imm > use_iekf > use_ukf > EKFTrack
         JPDA 模式下用更小的过程噪声 (0.3 vs 1.0)，防止 track 创建时速度被弱匹配拉偏
         """
         if self.association_mode == 'jpda':
@@ -312,6 +321,18 @@ class MultiObjectTracker:
                 dt=self.dt,
                 timestamp=timestamp,
                 process_noise_vel=process_noise,
+            )
+        elif self.use_iekf:
+            # P3-D: IEKFTrack
+            new_trk = IEKFTrack(
+                track_id=self.next_id,
+                initial_pos=det.position,
+                initial_vel=self.default_vel,
+                dt=self.dt,
+                timestamp=timestamp,
+                process_noise_vel=process_noise,
+                iekf_max_iter=self.iekf_max_iter,
+                iekf_tol=self.iekf_tol,
             )
         elif self.use_ukf:
             new_trk = UKFTrack(
